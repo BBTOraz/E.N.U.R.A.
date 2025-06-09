@@ -33,7 +33,7 @@ public class SttWebSocketHandler implements WebSocketHandler {
                     try {
                         SttInputDto dto = objectMapper.readValue(payload, SttInputDto.class);
                         log.info("Received from STT [{}]: '{}'", session.getId(), dto.getText());
-                        return orchestrationService.orchestrate(dto.getText())
+                        return orchestrationService.orchestrate(session.getId(), dto.getText())
                                 .doOnError(e -> log.error("Orchestration failed for STT input: {}", dto.getText(), e))
                                 .onErrorResume(e -> Mono.empty()); // Игнорируем ошибку, чтобы WS не закрылся
                     } catch (Exception e) {

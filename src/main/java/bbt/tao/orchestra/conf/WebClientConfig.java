@@ -1,12 +1,12 @@
 package bbt.tao.orchestra.conf;
 
+import bbt.tao.orchestra.manager.init.EnuPortalApiAuthenticator;
+import bbt.tao.orchestra.manager.init.PlatonusApiAuthenticator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 @Slf4j
 @Configuration
@@ -17,6 +17,17 @@ public class WebClientConfig {
 
     @Value("${enu.portal.base-url}")
     private String enuPortalBaseUrl;
+
+    @Value("${platonus.api.base-url}")
+    private String platonusBaseUrl;
+
+    private final EnuPortalApiAuthenticator enuPortalAuthenticator;
+    private final PlatonusApiAuthenticator platonusApiAuthenticator;
+
+    public WebClientConfig(EnuPortalApiAuthenticator enuPortalSessionManager, PlatonusApiAuthenticator platonusApiAuthenticator) {
+        this.enuPortalAuthenticator = enuPortalSessionManager;
+        this.platonusApiAuthenticator = platonusApiAuthenticator;
+    }
 
     @Bean
     public WebClient ttsWebClient(WebClient.Builder webClientBuilder) {
@@ -29,27 +40,17 @@ public class WebClientConfig {
     public WebClient enuPortalWebClient(WebClient.Builder builder) {
         return builder
                 .baseUrl(enuPortalBaseUrl)
+                .filter(enuPortalAuthenticator.authenticationFilter())
                 .codecs(conf -> conf.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
-                .filter(logRequest())
-                .filter(logResponse())
                 .build();
     }
 
-    private ExchangeFilterFunction logRequest() {
-        return ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
-            log.debug("Request: {} {}", clientRequest.method(), clientRequest.url());
-            clientRequest.headers().forEach((name, values) ->
-                    values.forEach(value -> log.debug("{}={}", name, value)));
-            return Mono.just(clientRequest);
-        });
-    }
-
-    private ExchangeFilterFunction logResponse() {
-        return ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
-            log.debug("Response status: {}", clientResponse.statusCode());
-            clientResponse.headers().asHttpHeaders().forEach((name, values) ->
-                    values.forEach(value -> log.debug("{}={}", name, value)));
-            return Mono.just(clientResponse);
-        });
+    @Bean
+    public WebClient platonusWebClient(WebClient.Builder builder) {
+        return builder
+                .baseUrl(platonusBaseUrl)
+                .filter(platonusApiAuthenticator.authenticationFilter())
+                .codecs(conf -> conf.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .build();
     }
 }
