@@ -36,10 +36,10 @@ public class OrchestrationService {
      * @param sttText Текст, полученный от STT.
      * @return Mono<Void>, завершающийся после обработки всего потока LLM.
      */
-    public Mono<Void> orchestrate(String sttText) {
+    public Mono<Void> orchestrate(String sessionId, String sttText) {
         log.info("Orchestration started for STT input: '{}'", sttText);
 
-        return llmService.generateStreaming(sttText) // Получаем Flux<String> чанков LLM
+        return llmService.generateStreaming(sessionId, sttText) // Получаем Flux<String> чанков LLM
                 .publishOn(Schedulers.boundedElastic()) // Переключаем обработку на другой поток, чтобы не блокировать WS/Netty
                 .doOnNext(llmChunk -> log.debug("Processing LLM chunk: '{}...'", llmChunk))
                 .bufferTimeout(100, Duration.ofMillis(CHUNK_BUFFER_TIMEOUT_MS))

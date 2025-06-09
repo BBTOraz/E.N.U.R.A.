@@ -1,16 +1,8 @@
-package bbt.tao.orchestra.dto.enu;
+package bbt.tao.orchestra.dto.enu.portal;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.util.List;
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-public record EnuStaffSearchResponse(
-        @JsonProperty("output") List<EnuStaffMember> members
-) {}
-
-record EnuStaffMember(
+public record EnuStaffMember(
         @JsonProperty("uuid") String uuid,
         @JsonProperty("building") String building,
         @JsonProperty("changeDate") String changeDate,

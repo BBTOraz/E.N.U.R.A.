@@ -16,10 +16,8 @@ import java.util.Objects;
 public class EnuAIService {
     private final ChatClient chatClient;
 
-    public EnuAIService(ChatClient.Builder chatClient) {
-        this.chatClient = chatClient
-                .defaultTools("getStaffInfo")
-                .build();
+    public EnuAIService(ChatClient chatClient1) {
+        this.chatClient = chatClient1;
     }
 
     public Flux<String> ask(String prompt) {
