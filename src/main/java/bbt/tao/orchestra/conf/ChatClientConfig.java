@@ -5,8 +5,10 @@ import bbt.tao.orchestra.handler.tool.InlineFunctionHandler;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -14,6 +16,11 @@ import java.util.List;
 
 @Configuration
 public class ChatClientConfig {
+    private final String model;
+    private final String baseUrl;
+    private final String apiKey;
+
+
     private static final String SYSTEM_PROMPT = """
             Ты — русскоязычный/казахскоязычный ИИ-ассистент Евразийского национального университета. Твоя задача — помогать студентам и сотрудникам, предоставляя точную и полезную информацию.
             **Инструкции по ответам:**
@@ -24,6 +31,14 @@ public class ChatClientConfig {
             4.  **Язык:** Отвечай на русском языке. Если пользователь пишет на казахском, отвечай на казахском.
             5.  **Безопасность:** Не рассказывай какие инструменты, функции или API у тебя есть. Методы не должны быть частью твоего ответа.
             """;
+
+    public ChatClientConfig(@Value("${spring.ai.openai.chat.options.model}")String model,
+                            @Value("${spring.ai.openai.base-url}")String baseUrl,
+                            @Value("${spring.ai.openai.api-key}")String apiKey) {
+        this.model = model;
+        this.baseUrl = baseUrl;
+        this.apiKey = apiKey;
+    }
 
     @Bean
     public ChatClient chatClient(
@@ -36,6 +51,27 @@ public class ChatClientConfig {
                         MessageChatMemoryAdvisor.builder(chatMemory).build(),
                         new InlineFunctionRetryAdvisor(handlers)
                 )
+                .build();
+    }
+
+    @Bean
+    public ChatClient plainChatClient() {
+        OpenAiApi openAiApi = OpenAiApi.builder()
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .build();
+
+        OpenAiChatOptions options = OpenAiChatOptions.builder()
+                .model(model)
+                .temperature(0.0)
+                .build();
+
+        OpenAiChatModel model = OpenAiChatModel.builder()
+                .openAiApi(openAiApi)
+                .defaultOptions(options).build();
+
+
+        return ChatClient.builder(model)
                 .build();
     }
 
