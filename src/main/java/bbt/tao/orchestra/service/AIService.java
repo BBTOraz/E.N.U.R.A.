@@ -11,6 +11,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -26,7 +27,7 @@ public class AIService {
     private final ChatClient chatClientBuilder;
 
 
-    public AIService(EmbeddingToolClassifier classifier, ChatClient chatClientBuilder1) {
+    public AIService(EmbeddingToolClassifier classifier, @Qualifier("chatClient") ChatClient chatClientBuilder1) {
         this.classifier = classifier;
         this.chatClientBuilder = chatClientBuilder1;
     }

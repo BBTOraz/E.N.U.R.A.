@@ -3,6 +3,7 @@ package bbt.tao.orchestra.service.enu.llm;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -16,7 +17,7 @@ import java.util.Objects;
 public class EnuAIService {
     private final ChatClient chatClient;
 
-    public EnuAIService(ChatClient chatClient1) {
+    public EnuAIService(@Qualifier("chatClient") ChatClient chatClient1) {
         this.chatClient = chatClient1;
     }
 
