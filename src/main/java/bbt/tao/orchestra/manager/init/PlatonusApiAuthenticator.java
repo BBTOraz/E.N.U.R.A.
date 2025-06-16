@@ -11,7 +11,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
@@ -21,13 +23,16 @@ import reactor.core.publisher.Sinks;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 @Component
 @Slf4j
 public class PlatonusApiAuthenticator implements ApiAuthenticator {
-
     private final WebClient webClient;
     private final String iin;
     private final String password;
@@ -109,6 +114,7 @@ public class PlatonusApiAuthenticator implements ApiAuthenticator {
     public ExchangeFilterFunction authenticationFilter() {
         return ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
             String path = clientRequest.url().getPath();
+            log.info("Processing request for Platonus API: {}", path);
             if (path.contains("/rest/api/login")) {
                 return Mono.just(clientRequest);
             }
@@ -116,6 +122,7 @@ public class PlatonusApiAuthenticator implements ApiAuthenticator {
                     .flatMap(ok -> {
                         String tokenVal = token.get();
                         String sidVal = sid.get();
+                        log.info("Platonus API token: {}", tokenVal);
                         if (tokenVal != null && sidVal != null) {
                             ClientRequest newReq = ClientRequest.from(clientRequest)
                                     .header( "Token",tokenVal)
@@ -126,11 +133,12 @@ public class PlatonusApiAuthenticator implements ApiAuthenticator {
                         return Mono.just(clientRequest);
                     });
         }).andThen(ExchangeFilterFunction.ofResponseProcessor(response -> {
+            log.info("Received response from Platonus API: {} {}", response.statusCode(), response.headers().asHttpHeaders());
             HttpStatusCode status = response.statusCode();
             if (status.is4xxClientError()) {
                 invalidateSession();
-                log.warn("Schedule API returned {} → invalidating session", status);
-                return Mono.error(new UnauthorizedException("Schedule API returned status " + status));
+                log.warn("Platonus API returned {} → invalidating session", status);
+                return Mono.error(new UnauthorizedException("Platonus API returned status " + status));
             }
             return Mono.just(response);
         }));

@@ -1,4 +1,4 @@
-package bbt.tao.orchestra.dto.enu.platonus;
+package bbt.tao.orchestra.dto.enu.platonus.schedule;
 
 public record LessonDetail(
         int number,
