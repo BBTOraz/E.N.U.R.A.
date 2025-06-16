@@ -35,11 +35,10 @@ public class ChatController {
         return geminiService.generateStreaming(conversationId, message);
     }
 
-    @GetMapping("/simple/{message}")
+    @GetMapping(value = "/simple/{message}")
     public Mono<ChatResponse> simpleChat(@PathVariable String message) {
         log.info("Received simple request: /simple/{}", message);
         return geminiService.generate(message)
-                .subscribeOn(Schedulers.boundedElastic())
                 .doOnSuccess(content -> log.info("Successfully received simple response for message: {}", content.getMetadata()))
                 .doOnError(error -> log.error("Error in simpleChat endpoint for message [{}]:", message, error));
     }

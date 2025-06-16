@@ -1,6 +1,6 @@
 package bbt.tao.orchestra.dto;
 
-import bbt.tao.orchestra.dto.enu.platonus.PlatonusScheduleRequest;
+import bbt.tao.orchestra.dto.enu.platonus.schedule.PlatonusScheduleRequest;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;

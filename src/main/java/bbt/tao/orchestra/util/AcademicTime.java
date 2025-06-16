@@ -1,52 +1,102 @@
 package bbt.tao.orchestra.util;
 
-import bbt.tao.orchestra.dto.enu.platonus.PlatonusScheduleRequest;
+import bbt.tao.orchestra.dto.enu.platonus.schedule.PlatonusScheduleRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import java.time.Month;
 import java.time.temporal.ChronoUnit;
 
 
 @Component
 @Slf4j
 public class AcademicTime {
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
+    private final Clock clock;
 
-    private static final LocalDate SEMESTER_1_START_2024 = LocalDate.parse("2024-09-02", DATE_FORMATTER);
-    private static final LocalDate SEMESTER_1_FINISH_2024 = LocalDate.parse("2024-12-15", DATE_FORMATTER);
+    @Value("${academic.year.start.month:9}")
+    private int academicYearStartMonthValue;
+    @Value("${academic.semester1.start.month:9}")
+    private int semester1StartMonth;
+    @Value("${academic.semester1.start.day:2}")
+    private int semester1StartDay;
+    @Value("${academic.semester1.finish.month:12}")
+    private int semester1FinishMonth;
+    @Value("${academic.semester1.finish.day:15}")
+    private int semester1FinishDay;
 
-    private static final LocalDate SEMESTER_2_START_2025 = LocalDate.parse("2025-01-13", DATE_FORMATTER);
-    private static final LocalDate SEMESTER_2_FINISH_2025 = LocalDate.parse("2025-04-27", DATE_FORMATTER);
+    @Value("${academic.semester2.start.month:1}")
+    private int semester2StartMonth;
+    @Value("${academic.semester2.start.day:13}")
+    private int semester2StartDay;
+    @Value("${academic.semester2.finish.month:4}")
+    private int semester2FinishMonth;
+    @Value("${academic.semester2.finish.day:27}")
+    private int semester2FinishDay;
 
-    // TODO: Добавить логику для других учебных годов или сделать ее динамической.
+    public AcademicTime(Clock clock) {
+        this.clock = clock;
+    }
+
+    public int getSemester1StartMonthDefault() { return semester1StartMonth; }
+    public int getSemester1StartDayDefault() { return semester1StartDay; }
+
+
+    private int getRelevantAcademicYearStartForDate(LocalDate date) {
+        Month academicStartMonth = Month.of(academicYearStartMonthValue);
+        if (date.getMonthValue() >= academicStartMonth.getValue()) {
+            return date.getYear();
+        } else {
+            return date.getYear() - 1;
+        }
+    }
 
     public PlatonusScheduleRequest getTermAndWeek(LocalDate date) {
+        int relevantAcademicYear = getRelevantAcademicYearStartForDate(date);
+
+        LocalDate sem1StartDate = LocalDate.of(relevantAcademicYear, semester1StartMonth, semester1StartDay);
+        LocalDate sem1FinishDate = LocalDate.of(relevantAcademicYear, semester1FinishMonth, semester1FinishDay);
+        LocalDate sem2StartDate = LocalDate.of(relevantAcademicYear + 1, semester2StartMonth, semester2StartDay);
+        LocalDate sem2FinishDate = LocalDate.of(relevantAcademicYear + 1, semester2FinishMonth, semester2FinishDay);
+
         Integer term = null;
-        int academicWeek;
         LocalDate currentSemesterStartDate = null;
 
-        if (!date.isBefore(SEMESTER_1_START_2024) && !date.isAfter(SEMESTER_1_FINISH_2024)) {
+        if (!date.isBefore(sem1StartDate) && !date.isAfter(sem1FinishDate)) {
             term = 1;
-            currentSemesterStartDate = SEMESTER_1_START_2024;
-        } else if (!date.isBefore(SEMESTER_2_START_2025) && !date.isAfter(SEMESTER_2_FINISH_2025)) {
+            currentSemesterStartDate = sem1StartDate;
+        } else if (!date.isBefore(sem2StartDate) && !date.isAfter(sem2FinishDate)) {
             term = 2;
-            currentSemesterStartDate = SEMESTER_2_START_2025;
+            currentSemesterStartDate = sem2StartDate;
         }
 
         if (term != null && currentSemesterStartDate != null) {
             long daysBetween = ChronoUnit.DAYS.between(currentSemesterStartDate, date);
             int weekNumber = (int) (daysBetween / 7) + 1;
-            academicWeek = Math.max(1, Math.min(15, weekNumber)); // Гарантируем 1-15
+            int academicWeek = Math.max(1, Math.min(15, weekNumber));
+            log.debug("Для даты {}: учебный год {}, семестр {}, начало {}, неделя {}",
+                    date, relevantAcademicYear, term, currentSemesterStartDate, academicWeek);
             return new PlatonusScheduleRequest(term, academicWeek);
         } else {
-            log.warn("Дата {} находится вне известных периодов семестров. Не удалось определить term и week.", date);
-            return null; // или выбросить исключение, или вернуть специальный объект ошибки
+            log.warn("Дата {} не попадает в известные периоды семестров для учебного года {}.",
+                    date, relevantAcademicYear);
+            return null;
         }
     }
 
     public PlatonusScheduleRequest getCurrentTermAndWeek() {
-        return getTermAndWeek(LocalDate.now());
+        return getTermAndWeek(LocalDate.now(clock));
+    }
+
+    public PlatonusScheduleRequest getContextualTermAndWeek() {
+        LocalDate currentDate = LocalDate.now(clock);
+        PlatonusScheduleRequest current = getTermAndWeek(currentDate);
+        if (current != null) {
+            return current;
+        }
+        log.debug("Текущая дата {} в межсезонье. Контекстный семестр будет term=1 (поведение API).", currentDate);
+        return new PlatonusScheduleRequest(1, 1);
     }
 }

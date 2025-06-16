@@ -4,18 +4,15 @@ package bbt.tao.orchestra.tools.enu;
 import bbt.tao.orchestra.dto.DateResolutionDetails;
 import bbt.tao.orchestra.dto.ResolvedQueryType;
 import bbt.tao.orchestra.dto.ScheduleFormatData;
-import bbt.tao.orchestra.dto.enu.platonus.PlatonusApiResponse;
+import bbt.tao.orchestra.dto.enu.platonus.schedule.PlatonusApiResponse;
 import bbt.tao.orchestra.service.DateResolutionService;
 import bbt.tao.orchestra.service.client.PlatonusPortalApiClient;
 import bbt.tao.orchestra.tools.formatter.ToolResponseFormatter;
 import bbt.tao.orchestra.tools.formatter.fabric.ResponseFormatterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
-
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 
 @Component
 @Slf4j
@@ -41,8 +38,8 @@ public class ScheduleTool {
             НЕ ОЖИДАЕТ от LLM предварительно извлеченных дат, номеров недель или семестров.
             Возвращает отформатированное расписание или сообщение об ошибке/отсутствии занятий.
             Используй этот инструмент, когда пользователь спрашивает о расписании, занятиях, парах, лекциях, семинарах, уроках.
-            """)
-    public String getSchedule(String userInput){
+            """, returnDirect = true)
+    public String getSchedule(@ToolParam(description = "оригинальный текст пользователя!") String userInput){
         ScheduleRequest request = new ScheduleRequest(userInput);
         log.info("Инструмент '{}' вызван с userInput: '{}'", "getPlatonusStudentSchedule", request.userInput());
 
