@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.concurrent.ExecutionException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
@@ -22,7 +24,7 @@ class PlatonusPortalApiClientIntegrationTest {
     private PlatonusPortalApiClient apiClient;
 
     @Test
-    void testFetchTimetable_variousTermWeek_combinations() {
+    void testFetchTimetable_variousTermWeek_combinations() throws ExecutionException, InterruptedException {
         // набор комбинаций term/week
         int[][] combos = {
                 {1, 1},   // 1-й семестр, 1-я неделя
@@ -35,7 +37,7 @@ class PlatonusPortalApiClientIntegrationTest {
         for (int[] combo : combos) {
             int term = combo[0], week = combo[1];
             // .block() чтобы тест ждал завершения
-            PlatonusApiResponse response = apiClient.fetchTimetable(term, week).block();
+            PlatonusApiResponse response = apiClient.fetchTimetable(term, week);
             // Проверяем, что мы вообще получили какой-то объект (может быть пустой)
             assertThat(response)
                     .as("Проверяем, что fetchTimetable(term=%d, week=%d) не вернул null", term, week)

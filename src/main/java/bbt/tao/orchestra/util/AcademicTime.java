@@ -42,9 +42,16 @@ public class AcademicTime {
 
     public int getSemester1StartMonthDefault() { return semester1StartMonth; }
     public int getSemester1StartDayDefault() { return semester1StartDay; }
+    public int getSemester1FinishMonthDefault() { return semester1FinishMonth; }
+    public int getSemester1FinishDayDefault() { return semester1FinishDay; }
+    public int getSemester2StartMonthDefault() { return semester2StartMonth; }
+    public int getSemester2StartDayDefault() { return semester2StartDay; }
+    public int getSemester2FinishMonthDefault() { return semester2FinishMonth; }
+    public int getSemester2FinishDayDefault() { return semester2FinishDay; }
 
 
-    private int getRelevantAcademicYearStartForDate(LocalDate date) {
+
+    public int getRelevantAcademicYearStartForDate(LocalDate date) {
         Month academicStartMonth = Month.of(academicYearStartMonthValue);
         if (date.getMonthValue() >= academicStartMonth.getValue()) {
             return date.getYear();

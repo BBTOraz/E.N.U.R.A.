@@ -11,7 +11,10 @@ import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -68,7 +71,6 @@ public class InlineFunctionRetryAdvisor implements BaseAdvisor {
 
         try {
             String result = handler.handle(json);
-
             AssistantMessage assistantMsg = new AssistantMessage(result);
             Generation gen = new Generation(assistantMsg, ChatGenerationMetadata.NULL);
             ChatResponse newChatResp = new ChatResponse(

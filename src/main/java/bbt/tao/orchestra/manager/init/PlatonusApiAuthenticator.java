@@ -5,6 +5,7 @@ import bbt.tao.orchestra.exception.UnauthorizedException;
 import bbt.tao.orchestra.manager.ApiAuthenticator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.netty.handler.codec.http.cookie.Cookie;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +44,8 @@ public class PlatonusApiAuthenticator implements ApiAuthenticator {
 
     private final AtomicBoolean loginInProgress = new AtomicBoolean(false);
     private final Sinks.Many<Boolean> loginNotifier = Sinks.many().replay().latest();
+
+    private final AtomicReference<List<String>> rawCookies = new AtomicReference<>(List.of());
 
     public PlatonusApiAuthenticator(WebClient.Builder webClient,
                                     @Value("${enu.api.username}") String iin, @Value("${enu.api.password}") String password,
@@ -91,7 +94,11 @@ public class PlatonusApiAuthenticator implements ApiAuthenticator {
                 .uri("/rest/api/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(loginRequest)
-                .exchangeToMono(this::parseAndStoreToken)
+                .exchangeToMono(resp -> {
+                    List<String> sc = resp.headers().header(HttpHeaders.SET_COOKIE);
+                    rawCookies.set(sc);
+                    return parseAndStoreToken(resp);
+                })
                 .timeout(Duration.ofSeconds(5))
                 .retryWhen(Retry.backoff(2, Duration.ofSeconds(1))
                         .filter(ex -> true)
@@ -120,17 +127,18 @@ public class PlatonusApiAuthenticator implements ApiAuthenticator {
             }
             return ensureAuthenticated()
                     .flatMap(ok -> {
-                        String tokenVal = token.get();
-                        String sidVal = sid.get();
-                        log.info("Platonus API token: {}", tokenVal);
-                        if (tokenVal != null && sidVal != null) {
-                            ClientRequest newReq = ClientRequest.from(clientRequest)
-                                    .header( "Token",tokenVal)
-                                    .header("sid",sidVal)
-                                    .build();
-                            return Mono.just(newReq);
+                        ClientRequest.Builder builder = ClientRequest.from(clientRequest);
+
+                        builder.header("Token", token.get());
+                        builder.header("sid",    sid.get());
+                        List<String> cookies = rawCookies.get();
+                        if (!cookies.isEmpty()) {
+                            String cookieHeader = String.join("; ", cookies);
+                            builder.header(HttpHeaders.COOKIE, cookieHeader);
+                            log.info("Cookies: {}", cookieHeader);
                         }
-                        return Mono.just(clientRequest);
+
+                        return Mono.just(builder.build());
                     });
         }).andThen(ExchangeFilterFunction.ofResponseProcessor(response -> {
             log.info("Received response from Platonus API: {} {}", response.statusCode(), response.headers().asHttpHeaders());
@@ -148,6 +156,7 @@ public class PlatonusApiAuthenticator implements ApiAuthenticator {
     public void invalidateSession() {
         token.set(null);
         sid.set(null);
+        rawCookies.set(List.of());
     }
 
     @Override
