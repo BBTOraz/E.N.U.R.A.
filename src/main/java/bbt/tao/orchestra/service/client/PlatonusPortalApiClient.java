@@ -15,12 +15,14 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutionException;
 
 @Service
 @Slf4j
@@ -138,14 +140,16 @@ public class PlatonusPortalApiClient {
         });
     }
 
-    public Mono<PlatonusApiResponse> fetchTimetable(Integer term, Integer week) {
-        return fetchTimetable(term, week, "ru");
+    public PlatonusApiResponse fetchTimetable(Integer term, Integer week) throws ExecutionException, InterruptedException {
+        return fetchTimetable(term, week, "ru")
+                .subscribeOn(Schedulers.boundedElastic())
+                .toFuture().get();
     }
 
 
-    public Mono<StudentSemesterPerformance> fetchAndParseGrades(int academicYear, int term, String lang, String studentIdOverride) {
+    public Mono<StudentSemesterPerformance> fetchAndParseGrades(int academicYear, int term, String lang) {
         return fetchCurrentUserId().flatMap(studentId -> {
-            String url = String.format("/current_progress_gradebook_student?studentID=%d&year=%d&term=%d&lang=%s",
+            String url = String.format("/current_progress_gradebook_student?studentID=%d&year=%d&term=%d&lang=%s&print=true",
                     studentId, academicYear, term, lang);
             log.info("Запрос HTML страницы оценок для studentId {}: {}", studentId, url);
 
@@ -153,7 +157,7 @@ public class PlatonusPortalApiClient {
                     .uri(url)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .doOnSuccess(content -> log.debug("Получен HTML контент для studentId {}: {}", studentId, content))
+                    .doOnSuccess(content -> log.debug("Получен HTML контент для studentId {}: ", studentId))
                     .map(htmlContent -> platonusGradesParser.parse(htmlContent, String.valueOf(studentId), String.valueOf(academicYear), String.valueOf(term)))
                     .doOnError(e -> log.error("Ошибка при получении или парсинге страницы оценок для studentId {}: {}", studentId, e.getMessage(), e))
                     .onErrorResume(e -> { // Ловим ошибки получения HTML или парсинга

@@ -46,7 +46,7 @@ public class AIService {
     }
 
 
-    public Mono<ChatResponse> generate(String userMessageContent) {
+    public Mono<String> generate(String userMessageContent) {
         log.debug("Sending non-streaming request to LLM: '{}'", userMessageContent);
         Message userMessage = new UserMessage(userMessageContent);
         Prompt prompt = new Prompt(userMessage);
@@ -56,7 +56,7 @@ public class AIService {
                 chatClientBuilder.prompt(prompt)
                         .toolCallbacks(tools.toArray(new ToolCallback[0]))
                         .call()
-                        .chatResponse()
+                        .content()
         );
     }
 }

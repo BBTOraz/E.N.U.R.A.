@@ -14,33 +14,43 @@ import java.util.List;
 @Component
 @Slf4j
 public class PlatonusGradesParser {
-    private static final int COL_SUBJECT_NAME = 0;
-    private static final int COL_SUBJECT_ACTIVITY_STREAM_1 = 1; // Для первой активности в строке tr.subject
-    private static final int COL_SUBJECT_TEACHER_1 = 2;         // Для первой активности
-    private static final int COL_SUBJECT_WEEK_1_START = 3;      // Начало оценок 1-7 недель для первой активности
-    private static final int COL_SUBJECT_TK1_ACTIVITY_1 = 10;   // ТК1 для первой активности
-    private static final int COL_SUBJECT_TK1_TOTAL = 11;        // ТК1 ОБЩ. (для предмета)
-    private static final int COL_SUBJECT_RK1 = 12;              // РК1 (для предмета)
-    private static final int COL_SUBJECT_R1 = 13;               // Р1 (для предмета)
-    private static final int COL_SUBJECT_WEEK_8_START = 14;     // Начало оценок 8-15 недель для первой активности
-    private static final int COL_SUBJECT_TK2_ACTIVITY_1 = 24;   // ТК2 для первой активности
-    private static final int COL_SUBJECT_TK2_TOTAL = 25;        // ТК2 ОБЩ. (для предмета)
-    private static final int COL_SUBJECT_RK2 = 26;              // РК2 (для предмета)
-    private static final int COL_SUBJECT_R2 = 27;               // Р2 (для предмета)
-    private static final int COL_SUBJECT_COURSEWORK = 28;
-    private static final int COL_SUBJECT_PRACTICE = 29;
-    private static final int COL_SUBJECT_RESEARCH = 30;
-    private static final int COL_SUBJECT_ADMISSION_RATING = 31;
-    private static final int COL_SUBJECT_EXAM = 32;
-    private static final int COL_SUBJECT_FINAL_NUMERIC = 33;
-    private static final int COL_SUBJECT_FINAL_LETTER = 34;
-    private static final int ACT_IDX_STREAM = 0;
-    private static final int ACT_IDX_TEACHER = 1;
-    private static final int ACT_IDX_W1_START = 2;
-    private static final int ACT_IDX_TK1 = ACT_IDX_W1_START + 7;
-    private static final int ACT_IDX_W8_START = ACT_IDX_TK1 + 1;
-    private static final int ACT_IDX_TK2 = ACT_IDX_W8_START + 8;
+    private static final int IDX_S_DISCIPLINE = 0;
+    private static final int IDX_S_STREAM_MAIN = 1;
+    private static final int IDX_S_TEACHER_MAIN = 2;
+    private static final int IDX_S_W_START_1 = 3; // Недели 1-7 (7 ячеек: 3-9)
+    private static final int IDX_S_TK1_ACTIVITY = 10;
+    private static final int IDX_S_TK1_TOTAL_SUBJECT = 11;
+    private static final int IDX_S_RK1_SUBJECT = 12;
+    private static final int IDX_S_R1_SUBJECT = 13;
+    private static final int IDX_S_W_START_2 = 14; // Недели 8-15 (8 ячеек: 14-21)
+    private static final int IDX_S_TK2_ACTIVITY = 22;
+    private static final int IDX_S_TK2_TOTAL_SUBJECT = 23;
+    private static final int IDX_S_RK2_SUBJECT = 24;
+    private static final int IDX_S_R2_SUBJECT = 25;
+    private static final int IDX_S_COURSEWORK = 26;
+    private static final int IDX_S_PRACTICE = 27;
+    private static final int IDX_S_RESEARCH = 28;
+    private static final int IDX_S_ADMISSION_RATING = 29;
+    private static final int IDX_S_EXAM = 30;
+    private static final int IDX_S_FINAL_NUMERIC = 31;
+    private static final int IDX_S_FINAL_LETTER = 32;
+    private static final int EXPECTED_CELLS_SUBJECT_ROW = 33; // Ожидаемое количество ячеек
 
+    // tr.subject_study_groups
+    // Дисциплина (colspan), Учебный поток, Преподаватель, W1-7, TK1, (нет РК1, Р1), W8-15, TK2, (нет РК2, Р2 и т.д.)
+    // Stream: 0
+    // Teacher: 1
+    // W1-7: 2-8 (7 ячеек)
+    // TK1: 9
+    // W8-15: 10-17 (8 ячеек)
+    // TK2: 18
+    private static final int IDX_A_STREAM = 0;
+    private static final int IDX_A_TEACHER = 1;
+    private static final int IDX_A_W_START_1 = 2;
+    private static final int IDX_A_TK1 = 9;
+    private static final int IDX_A_W_START_2 = 10;
+    private static final int IDX_A_TK2 = 18;
+    private static final int EXPECTED_CELLS_ACTIVITY_ROW = 19; // Ожидаемое количество ячеек
 
     public StudentSemesterPerformance parse(String htmlContent, String studentId, String academicYear, String term) {
         log.info("Начало парсинга оценок для студента {}, год {}, семестр {}", studentId, academicYear, term);
@@ -49,91 +59,74 @@ public class PlatonusGradesParser {
 
         Element gradesTableBody = doc.selectFirst("table.table-compact-2x.bordered > tbody");
         if (gradesTableBody == null) {
-            log.warn("Тело таблицы с оценками (tbody) не найдено.");
-            performance.getParsingIssues().add("Основная таблица оценок не найдена.");
+            String msg = "Тело таблицы с оценками (tbody) не найдено.";
+            log.warn(msg);
+            performance.getParsingIssues().add(msg);
             return performance;
         }
 
         Elements rows = gradesTableBody.children();
         SubjectPerformance currentSubjectPerformance = null;
-
         for (Element row : rows) {
             if (row.hasClass("subject")) {
-                // Завершаем и добавляем предыдущий предмет, если он был
                 if (currentSubjectPerformance != null) {
                     performance.getSubjects().add(currentSubjectPerformance);
                 }
-
-                // Начинаем новый предмет
                 Elements cells = row.children();
-                if (cells.size() <= COL_SUBJECT_FINAL_LETTER) { // Проверка на минимальное количество ячеек для главной строки
-                    String msg = "Строка предмета (class='subject') содержит недостаточно ячеек (" + cells.size() + "). Пропускаем.";
-                    log.warn(msg);
-                    performance.getParsingIssues().add(msg + " HTML: " + row.text().substring(0, Math.min(row.text().length(), 70)));
-                    currentSubjectPerformance = null; // Сбрасываем, чтобы не добавлять активности к неполному предмету
+                if (cells.size() < EXPECTED_CELLS_SUBJECT_ROW) {
+                    String msg = String.format("Строка предмета (class='subject') содержит %d ячеек, ожидалось %d. Пропускаем.", cells.size(), EXPECTED_CELLS_SUBJECT_ROW);
+                    log.warn(msg + " HTML: " + row.text().substring(0, Math.min(row.text().length(), 70)));
+                    performance.getParsingIssues().add(msg);
+                    currentSubjectPerformance = null;
                     continue;
                 }
 
-                String subjectName = safeGetText(cells, COL_SUBJECT_NAME);
+                String subjectName = safeGetText(cells, IDX_S_DISCIPLINE);
                 SubjectGradeAggregation aggregatedGrades = new SubjectGradeAggregation(
-                        safeGetText(cells, COL_SUBJECT_TK1_TOTAL),
-                        safeGetText(cells, COL_SUBJECT_RK1),
-                        safeGetText(cells, COL_SUBJECT_R1),
-                        safeGetText(cells, COL_SUBJECT_TK2_TOTAL),
-                        safeGetText(cells, COL_SUBJECT_RK2),
-                        safeGetText(cells, COL_SUBJECT_R2),
-                        safeGetText(cells, COL_SUBJECT_COURSEWORK),
-                        safeGetText(cells, COL_SUBJECT_PRACTICE),
-                        safeGetText(cells, COL_SUBJECT_RESEARCH),
-                        safeGetText(cells, COL_SUBJECT_ADMISSION_RATING),
-                        safeGetText(cells, COL_SUBJECT_EXAM),
-                        safeGetText(cells, COL_SUBJECT_FINAL_NUMERIC),
-                        safeGetText(cells, COL_SUBJECT_FINAL_LETTER)
+                        safeGetText(cells, IDX_S_TK1_TOTAL_SUBJECT), safeGetText(cells, IDX_S_RK1_SUBJECT),
+                        safeGetText(cells, IDX_S_R1_SUBJECT), safeGetText(cells, IDX_S_TK2_TOTAL_SUBJECT),
+                        safeGetText(cells, IDX_S_RK2_SUBJECT), safeGetText(cells, IDX_S_R2_SUBJECT),
+                        safeGetText(cells, IDX_S_COURSEWORK), safeGetText(cells, IDX_S_PRACTICE),
+                        safeGetText(cells, IDX_S_RESEARCH), safeGetText(cells, IDX_S_ADMISSION_RATING),
+                        safeGetText(cells, IDX_S_EXAM), safeGetText(cells, IDX_S_FINAL_NUMERIC),
+                        safeGetText(cells, IDX_S_FINAL_LETTER)
                 );
                 currentSubjectPerformance = new SubjectPerformance(subjectName, aggregatedGrades, new ArrayList<>());
                 log.debug("Парсинг предмета: {}", subjectName);
 
-                // Парсим первую активность (из строки tr.subject)
                 SubjectActivityDetails firstActivity = new SubjectActivityDetails();
-                firstActivity.setActivityName(safeGetText(cells, COL_SUBJECT_ACTIVITY_STREAM_1));
-                firstActivity.setTeacher(safeGetText(cells, COL_SUBJECT_TEACHER_1));
-
+                firstActivity.setActivityName(safeGetText(cells, IDX_S_STREAM_MAIN));
+                firstActivity.setTeacher(safeGetText(cells, IDX_S_TEACHER_MAIN));
                 List<Grade> weekly1_7_first = new ArrayList<>();
-                for (int i = 0; i < 7; i++) weekly1_7_first.add(parseGradeFromCell(cells, COL_SUBJECT_WEEK_1_START + i, String.valueOf(i + 1)));
+                for (int i = 0; i < 7; i++) weekly1_7_first.add(parseGradeFromCell(cells, IDX_S_W_START_1 + i, String.valueOf(i + 1)));
                 firstActivity.setWeeklyGrades1_7(weekly1_7_first);
-                firstActivity.setTk1Score(safeGetText(cells, COL_SUBJECT_TK1_ACTIVITY_1));
-
+                firstActivity.setTk1Score(safeGetText(cells, IDX_S_TK1_ACTIVITY));
                 List<Grade> weekly8_15_first = new ArrayList<>();
-                for (int i = 0; i < 8; i++) weekly8_15_first.add(parseGradeFromCell(cells, COL_SUBJECT_WEEK_8_START + i, String.valueOf(i + 8)));
+                for (int i = 0; i < 8; i++) weekly8_15_first.add(parseGradeFromCell(cells, IDX_S_W_START_2 + i, String.valueOf(i + 8)));
                 firstActivity.setWeeklyGrades8_15(weekly8_15_first);
-                firstActivity.setTk2Score(safeGetText(cells, COL_SUBJECT_TK2_ACTIVITY_1));
-
+                firstActivity.setTk2Score(safeGetText(cells, IDX_S_TK2_ACTIVITY));
                 currentSubjectPerformance.getActivities().add(firstActivity);
 
             } else if (row.hasClass("subject_study_groups") && currentSubjectPerformance != null) {
-                // Дополнительная активность для текущего предмета
                 Elements cells = row.children();
-                if (cells.size() <= ACT_IDX_TK2) { // Минимальное ожидаемое количество ячеек
-                    String msg = "Строка активности (class='subject_study_groups') содержит недостаточно ячеек (" + cells.size() + "). Пропускаем.";
-                    log.warn(msg);
-                    performance.getParsingIssues().add(msg + " HTML: " + row.text().substring(0, Math.min(row.text().length(), 70)));
+                if (cells.size() < EXPECTED_CELLS_ACTIVITY_ROW) {
+                    String msg = String.format("Строка активности (class='subject_study_groups') содержит %d ячеек, ожидалось %d. Пропускаем.", cells.size(), EXPECTED_CELLS_ACTIVITY_ROW);
+                    log.warn(msg + " HTML: " + row.text().substring(0, Math.min(row.text().length(), 70)));
+                    performance.getParsingIssues().add(msg);
                     continue;
                 }
 
                 SubjectActivityDetails activityDetails = new SubjectActivityDetails();
-                activityDetails.setActivityName(safeGetText(cells, ACT_IDX_STREAM));
-                activityDetails.setTeacher(safeGetText(cells, ACT_IDX_TEACHER));
-
+                activityDetails.setActivityName(safeGetText(cells, IDX_A_STREAM));
+                activityDetails.setTeacher(safeGetText(cells, IDX_A_TEACHER));
                 List<Grade> weekly1_7 = new ArrayList<>();
-                for (int i = 0; i < 7; i++) weekly1_7.add(parseGradeFromCell(cells, ACT_IDX_W1_START + i, String.valueOf(i + 1)));
+                for (int i = 0; i < 7; i++) weekly1_7.add(parseGradeFromCell(cells, IDX_A_W_START_1 + i, String.valueOf(i + 1)));
                 activityDetails.setWeeklyGrades1_7(weekly1_7);
-                activityDetails.setTk1Score(safeGetText(cells, ACT_IDX_TK1));
-
+                activityDetails.setTk1Score(safeGetText(cells, IDX_A_TK1));
                 List<Grade> weekly8_15 = new ArrayList<>();
-                for (int i = 0; i < 8; i++) weekly8_15.add(parseGradeFromCell(cells, ACT_IDX_W8_START + i, String.valueOf(i + 8)));
+                for (int i = 0; i < 8; i++) weekly8_15.add(parseGradeFromCell(cells, IDX_A_W_START_2 + i, String.valueOf(i + 8)));
                 activityDetails.setWeeklyGrades8_15(weekly8_15);
-                activityDetails.setTk2Score(safeGetText(cells, ACT_IDX_TK2));
-
+                activityDetails.setTk2Score(safeGetText(cells, IDX_A_TK2));
                 currentSubjectPerformance.getActivities().add(activityDetails);
             }
         }
@@ -145,7 +138,7 @@ public class PlatonusGradesParser {
         if (performance.getSubjects().isEmpty() && performance.getParsingIssues().isEmpty()){
             performance.getParsingIssues().add("Не найдено ни одного предмета в таблице успеваемости.");
         }
-        log.info("Парсинг завершен. Извлечено {} предметов. Обнаружено {} проблем при парсинге.",
+        log.info("Парсинг HTML завершен. Извлечено {} предметов. Обнаружено {} проблем при парсинге.",
                 performance.getSubjects().size(), performance.getParsingIssues().size());
         return performance;
     }
@@ -157,8 +150,9 @@ public class PlatonusGradesParser {
             boolean isNp = cell.attr("style").toLowerCase().contains("background-color: #bbbbbb");
             return new Grade(controlPointName, scoreValue, isNp);
         }
-        log.warn("Попытка прочитать ячейку с индексом {} для '{}', но ячеек всего {}. Возвращаем пустую оценку.", cellIndex, controlPointName, cells.size());
-        return new Grade(controlPointName, "", true); // Если ячейки нет, считаем "не предусмотрено"
+        // Если ячейка выходит за пределы, это проблема с нашими индексами или HTML-структурой
+        log.warn("Попытка прочитать несуществующую ячейку: индекс {}, controlPoint '{}', всего ячеек {}. Возвращаем пустую оценку.", cellIndex, controlPointName, cells.size());
+        return new Grade(controlPointName, "", true);
     }
 
     private String safeGetText(Elements cells, int index) {

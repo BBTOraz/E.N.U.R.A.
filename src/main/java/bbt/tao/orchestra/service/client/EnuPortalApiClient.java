@@ -10,11 +10,14 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.retry.Retry;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.ExecutionException;
 
 import static org.springframework.ai.util.json.JsonParser.toJson;
 
@@ -55,8 +58,7 @@ public class EnuPortalApiClient {
         return (s != null && !s.isBlank()) ? s : "";
     }
 
-
-    public EnuStaffSearchResponse getStaffInfo(DictionaryStaffInfoRequest request) {
+    public EnuStaffSearchResponse getStaffInfo(DictionaryStaffInfoRequest request) throws ExecutionException, InterruptedException {
         String jsonValue = toJson(buildStaffInfoRequest(request));
         String encoded = URLEncoder.encode(jsonValue, StandardCharsets.UTF_8);
         log.info("getStaffInfo: {}", jsonValue);
@@ -74,10 +76,26 @@ public class EnuPortalApiClient {
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .bodyToMono(EnuStaffSearchResponse.class)
+                .doOnSubscribe(subscription -> log.info("EnuPortalApiClient.getStaffInfo: Подписка на bodyToMono"))
+                .doOnNext(responseObject -> {
+                    System.out.println("webClient do on next chain: " + responseObject);
+                    if (responseObject != null) {
+                        log.info("EnuPortalApiClient.getStaffInfo: doOnNext ПОЛУЧИЛ EnuStaffSearchResponse. Количество сотрудников: {}",
+                                responseObject.members() != null ? responseObject.members().size() : "members is null");
+                    } else {
+                        log.warn("EnuPortalApiClient.getStaffInfo: doOnNext ПОЛУЧИЛ null EnuStaffSearchResponse (ЭТОГО БЫТЬ НЕ ДОЛЖНО С bodyToMono!).");
+                    }
+                })
                 .retryWhen(Retry.backoff(1, Duration.ofMillis(500))
                         .filter(ex -> ex instanceof UnauthorizedException)
-                        .doBeforeRetry(sig -> log.info("Retry ENU getStaffInfo after Unauthorized"))
+                        .doBeforeRetry(sig -> log.warn("Retry ENU getStaffInfo after Unauthorized"))
                 )
-                .doOnError(err -> log.error("Error calling ENU getStaffInfo: {}", err.getMessage())).block();
+                .doOnError(err -> log.error("Error calling ENU getStaffInfo: {}", err.getMessage()))
+                .onErrorResume(UnauthorizedException.class, e -> {
+                    log.error("Unauthorized access to ENU portal: {}", e.getMessage());
+                    System.out.println("Unauthorized access to ENU portal: " + e.getMessage());
+                    return Mono.error(new UnauthorizedException("Unauthorized access to ENU portal. Please check your session."));
+                })
+                .subscribeOn(Schedulers.boundedElastic()).toFuture().get();
     }
 }

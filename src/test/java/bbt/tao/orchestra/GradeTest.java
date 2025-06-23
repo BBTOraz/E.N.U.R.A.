@@ -24,7 +24,7 @@ public class GradeTest {
         String studentIdOverride = null; // not used in current implementation
 
         // Выполняем интеграционный запрос и ожидаем реальные данные
-        Mono<StudentSemesterPerformance> resultMono = client.fetchAndParseGrades(academicYear, term, lang, studentIdOverride);
+        Mono<StudentSemesterPerformance> resultMono = client.fetchAndParseGrades(academicYear, term, lang);
         StudentSemesterPerformance performance = resultMono.block();
 
         System.out.println("Performance: " + performance);

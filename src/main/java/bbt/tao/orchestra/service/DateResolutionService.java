@@ -120,7 +120,7 @@ public class DateResolutionService {
                 summary = "По нашим данным, текущая дата (" + today.format(USER_FRIENDLY_DATE_FORMATTER) +
                         ") не попадает в учебный семестр. API Платонуса использует семестр по умолчанию (1-й).";
                 log.warn("DRS: {}", summary);
-                apiParams = new PlatonusScheduleRequest(1, 1); // Дефолт API: term=1, week=1
+                apiParams = new PlatonusScheduleRequest(1, 1);
             } else {
                 finalQueryType = ResolvedQueryType.CURRENT_WEEK_DEFAULT;
                 specificDate = Optional.of(today); // Для userRequestedDate

@@ -9,6 +9,8 @@ import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -138,14 +140,20 @@ public class LLMDateParser {
         log.info("LlmDateExtractor - System Prompt для LLM (первые 500 символов):\n{}", prompt.getInstructions().get(0).getText().substring(0, Math.min(prompt.getInstructions().get(0).getText().length(), 500)));
         log.info("LlmDateExtractor - User Input для LLM: {}", userInput);
 
+        //todo не совсем уверен в правильности использование реактивного подхода здесь, но в целом работает
         try {
-           ChatClient.CallResponseSpec callResponseSpec =
-                    plainChatClient.prompt()
-                            .system(prompt.getInstructions().get(0).getText())
-                            .user(userInput)
-                            .call();
+           ChatResponse callResponseSpec =
+                    Mono.fromCallable(()-> {
+                      return plainChatClient.prompt()
+                                        .system(prompt.getInstructions().get(0).getText())
+                                        .user(userInput)
+                                        .call()
+                                .chatResponse();
+                    }).subscribeOn(Schedulers.boundedElastic()).toFuture().get();
 
-            ExtractedDateResponse extractedResponse = outputParser.convert(callResponseSpec.chatResponse().getResult().getOutput().getText()); // Используем getText() если это актуально для вашей версии
+
+
+            ExtractedDateResponse extractedResponse = outputParser.convert(callResponseSpec.getResult().getOutput().getText()); // Используем getText() если это актуально для вашей версии
             log.info("LlmDateExtractor - Parsed LLM Output: {}", extractedResponse);
 
             if (extractedResponse != null && !extractedResponse.isDateNotFound() && extractedResponse.extractedDate() != null) {

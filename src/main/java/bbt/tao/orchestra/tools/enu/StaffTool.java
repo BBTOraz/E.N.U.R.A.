@@ -2,15 +2,32 @@ package bbt.tao.orchestra.tools.enu;
 
 import bbt.tao.orchestra.dto.enu.portal.DictionaryStaffInfoRequest;
 import bbt.tao.orchestra.dto.enu.portal.EnuStaffSearchResponse;
+import bbt.tao.orchestra.exception.UnauthorizedException;
 import bbt.tao.orchestra.service.client.EnuPortalApiClient;
 import bbt.tao.orchestra.tools.formatter.fabric.ResponseFormatterRegistry;
+import jakarta.annotation.PreDestroy;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+
+import java.time.Duration;
+import java.util.concurrent.ExecutionException;
 
 @Component
+@Slf4j
 public class StaffTool {
     private final EnuPortalApiClient enuPortalApiClient;
     private final ResponseFormatterRegistry responseFormatterRegistry;
+
+
+    private final Scheduler blockingScheduler = Schedulers.newBoundedElastic(
+            10, // максимум потоков
+            10000, // максимум задач в очереди
+            "staff-tool-blocking"
+    );
 
     public StaffTool(EnuPortalApiClient enuPortalApiClient, ResponseFormatterRegistry responseFormatterRegistry) {
         this.enuPortalApiClient = enuPortalApiClient;
@@ -26,9 +43,13 @@ public class StaffTool {
             """,
             returnDirect = true
     )
-    public String getStaffInfo(DictionaryStaffInfoRequest request) {
-
+    public String getStaffInfo(DictionaryStaffInfoRequest request) throws ExecutionException, InterruptedException {
         return responseFormatterRegistry.getFormatter(EnuStaffSearchResponse.class)
                 .format(enuPortalApiClient.getStaffInfo(request));
+    }
+
+    @PreDestroy
+    public void cleanup() {
+        blockingScheduler.dispose();
     }
 }
