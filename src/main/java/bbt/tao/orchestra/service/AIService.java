@@ -46,7 +46,7 @@ public class AIService {
     }
 
 
-    public Mono<String> generate(String userMessageContent) {
+    public Mono<String> generate(String conversationId, String userMessageContent) {
         log.debug("Sending non-streaming request to LLM: '{}'", userMessageContent);
         Message userMessage = new UserMessage(userMessageContent);
         Prompt prompt = new Prompt(userMessage);
@@ -54,6 +54,8 @@ public class AIService {
 
         return Mono.fromCallable(() ->
                 chatClientBuilder.prompt(prompt)
+                        .advisors(advisorSpec ->
+                                advisorSpec.param(ChatMemory.CONVERSATION_ID, conversationId))
                         .toolCallbacks(tools.toArray(new ToolCallback[0]))
                         .call()
                         .content()

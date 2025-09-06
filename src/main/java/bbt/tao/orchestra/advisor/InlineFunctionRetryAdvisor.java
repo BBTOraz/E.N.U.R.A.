@@ -41,7 +41,13 @@ public class InlineFunctionRetryAdvisor implements BaseAdvisor {
     @Override
     public ChatClientResponse after(ChatClientResponse response, AdvisorChain chain) {
         log.info("InlineFunctionRetryAdvisor.after()");
-        assert response.chatResponse() != null;
+
+        if (response.chatResponse() == null ||
+            response.chatResponse().getResult() == null ||
+            response.chatResponse().getResult().getOutput() == null) {
+            log.warn("ChatResponse or its components are null");
+            return response;
+        }
 
         String content = response.chatResponse()
                 .getResult()
@@ -50,7 +56,11 @@ public class InlineFunctionRetryAdvisor implements BaseAdvisor {
 
         log.info("InlineFunctionRetryAdvisor content: {}", content);
 
-        assert content != null;
+        if (content == null) {
+            log.warn("Content is null, returning original response");
+            return response;
+        }
+
         Matcher m = INLINE_FN.matcher(content);
         log.info("InlineFunctionRetryAdvisor matcher: {}", m);
         if (!m.find()) {
@@ -94,3 +104,4 @@ public class InlineFunctionRetryAdvisor implements BaseAdvisor {
         return 100;
     }
 }
+

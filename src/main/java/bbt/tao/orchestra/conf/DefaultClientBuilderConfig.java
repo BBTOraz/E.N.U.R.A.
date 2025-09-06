@@ -74,7 +74,7 @@ public class DefaultClientBuilderConfig {
 
     private ExchangeFilterFunction logRequest() {
         return ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
-            log.info("Request: {} {}", clientRequest.method(), clientRequest.url());
+           /* log.info("Request: {} {}", clientRequest.method(), clientRequest.url());*/
             clientRequest.headers().forEach((name, values) ->
                     values.forEach(value -> log.info("{}={}", name, value)));
             return Mono.just(clientRequest);
@@ -83,7 +83,7 @@ public class DefaultClientBuilderConfig {
 
     private ExchangeFilterFunction logResponse() {
         return ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
-            log.info("Response status: {}", clientResponse.statusCode());
+           /* log.info("Response status: {}", clientResponse.statusCode());*/
             clientResponse.headers().asHttpHeaders().forEach((name, values) ->
                     values.forEach(value -> log.info("{}={}", name, value)));
             return Mono.just(clientResponse);

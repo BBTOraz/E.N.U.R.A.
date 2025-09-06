@@ -2,12 +2,14 @@ package bbt.tao.orchestra.conf;
 
 import bbt.tao.orchestra.advisor.InlineFunctionRetryAdvisor;
 import bbt.tao.orchestra.handler.tool.InlineFunctionHandler;
+import bbt.tao.orchestra.service.rag.HierarchicalDocumentRetriever;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,7 +21,6 @@ public class ChatClientConfig {
     private final String model;
     private final String baseUrl;
     private final String apiKey;
-
 
     private static final String SYSTEM_PROMPT = """
             Ты — русскоязычный/казахскоязычный ИИ-ассистент Евразийского национального университета. Твоя задача — помогать студентам и сотрудникам, предоставляя точную и полезную информацию.
@@ -42,13 +43,18 @@ public class ChatClientConfig {
 
     @Bean
     public ChatClient chatClient(
-            ChatClient.Builder chatClientBuilder,
+            OpenAiChatModel openAiChatModel,
             ChatMemory chatMemory,
-            List<InlineFunctionHandler> handlers) {
-        return chatClientBuilder
+            List<InlineFunctionHandler> handlers,
+            HierarchicalDocumentRetriever hierarchicalDocumentRetriever
+    ) {
+        return ChatClient.builder(openAiChatModel)
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(
                         MessageChatMemoryAdvisor.builder(chatMemory).build(),
+                        RetrievalAugmentationAdvisor.builder()
+                                .documentRetriever(hierarchicalDocumentRetriever)
+                                .build(),
                         new InlineFunctionRetryAdvisor(handlers)
                 )
                 .build();
@@ -70,17 +76,8 @@ public class ChatClientConfig {
                 .openAiApi(openAiApi)
                 .defaultOptions(options).build();
 
-
         return ChatClient.builder(model)
                 .build();
     }
 
-/*    @Bean
-    public ChatClient chatClient(OpenAiChatModel model,
-                                 ChatMemory chatMemory) {
-        return ChatClient.builder(model)
-                .defaultSystem(SYSTEM_PROMPT)
-                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
-                .build();
-    }*/
 }
