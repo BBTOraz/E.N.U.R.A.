@@ -9,6 +9,7 @@ import bbt.tao.orchestra.tools.formatter.fabric.ResponseFormatterRegistry;
 import bbt.tao.orchestra.util.AcademicTime;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -27,7 +28,8 @@ public class PlatonusStudentGradesTool {
 
     public PlatonusStudentGradesTool(AcademicTime academicTime,
                                      PlatonusPortalApiClient platonusPortalApiClient,
-                                     ResponseFormatterRegistry responseFormatterRegistry) {
+                                     ResponseFormatterRegistry responseFormatterRegistry
+                                     ) {
         this.academicTime = academicTime;
         this.platonusPortalApiClient = platonusPortalApiClient;
         this.platonusGradesResponseFormatter = responseFormatterRegistry.getFormatter(FormattedGradesResponse.class);

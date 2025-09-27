@@ -18,7 +18,7 @@ public class ResponseFormatterRegistry {
         Map<Class<?>, ToolResponseFormatter<?>> map = new HashMap<>();
         for (ToolResponseFormatter<?> formatter : list) {
             ResolvableType rt = ResolvableType.forClass(formatter.getClass())
-                .as(ToolResponseFormatter.class);
+                    .as(ToolResponseFormatter.class);
             Class<?> responseType = rt.getGeneric(0).resolve();
             Objects.requireNonNull(responseType,
                     () -> "Не удалось определить тип ответа для " + formatter.getClass());

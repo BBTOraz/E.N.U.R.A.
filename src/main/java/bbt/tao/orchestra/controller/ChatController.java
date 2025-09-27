@@ -1,5 +1,6 @@
 package bbt.tao.orchestra.controller;
 
+import bbt.tao.orchestra.dto.api.OrchestraResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -61,5 +62,19 @@ public class ChatController {
                         .body("Произошла ошибка при обработке запроса. Пожалуйста, повторите попытку позже."));
                 })
                 .doOnSuccess(entity -> log.debug("Completed request processing for: [{}]", message));
+    }
+
+    @GetMapping(value = "/simple-json/{conversationId}/{message}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity< OrchestraResponse>> simpleChatJson(@PathVariable String message,
+                                                                                            @PathVariable String conversationId) {
+        log.info("Received simple-json request: /simple-json/{}/{}", conversationId, message);
+        return geminiService.generateFormatted(conversationId, message)
+                .map(ResponseEntity::ok)
+                .onErrorResume(error -> {
+                    log.error("Error in simpleChatJson endpoint for message [{}]: {}", message, error.getMessage(), error);
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(new OrchestraResponse(null, null)));
+                });
     }
 }

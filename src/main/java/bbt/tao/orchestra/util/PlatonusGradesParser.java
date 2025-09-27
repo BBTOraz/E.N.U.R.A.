@@ -34,23 +34,15 @@ public class PlatonusGradesParser {
     private static final int IDX_S_EXAM = 30;
     private static final int IDX_S_FINAL_NUMERIC = 31;
     private static final int IDX_S_FINAL_LETTER = 32;
-    private static final int EXPECTED_CELLS_SUBJECT_ROW = 33; // Ожидаемое количество ячеек
+    private static final int EXPECTED_CELLS_SUBJECT_ROW = 33;
 
-    // tr.subject_study_groups
-    // Дисциплина (colspan), Учебный поток, Преподаватель, W1-7, TK1, (нет РК1, Р1), W8-15, TK2, (нет РК2, Р2 и т.д.)
-    // Stream: 0
-    // Teacher: 1
-    // W1-7: 2-8 (7 ячеек)
-    // TK1: 9
-    // W8-15: 10-17 (8 ячеек)
-    // TK2: 18
     private static final int IDX_A_STREAM = 0;
     private static final int IDX_A_TEACHER = 1;
     private static final int IDX_A_W_START_1 = 2;
     private static final int IDX_A_TK1 = 9;
     private static final int IDX_A_W_START_2 = 10;
     private static final int IDX_A_TK2 = 18;
-    private static final int EXPECTED_CELLS_ACTIVITY_ROW = 19; // Ожидаемое количество ячеек
+    private static final int EXPECTED_CELLS_ACTIVITY_ROW = 19;
 
     public StudentSemesterPerformance parse(String htmlContent, String studentId, String academicYear, String term) {
         log.info("Начало парсинга оценок для студента {}, год {}, семестр {}", studentId, academicYear, term);
