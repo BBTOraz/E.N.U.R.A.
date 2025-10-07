@@ -1,0 +1,16 @@
+package bbt.tao.orchestra.agent.model;
+
+public enum AgentStage {
+    SOLVER_STARTED,
+    RAG_CONTEXT,
+    SOLVER_TOKEN,
+    TOOL_SELECTION,
+    TOOL_SELECTION_SKIPPED,
+    TOOL_EXECUTION,
+    DRAFT_READY,
+    VERIFICATION_STARTED,
+    VERIFICATION_PROGRESS,
+    VERIFICATION_FEEDBACK,
+    FINAL_ANSWER,
+    ERROR
+}

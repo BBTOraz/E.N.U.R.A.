@@ -4,6 +4,7 @@ import bbt.tao.orchestra.dto.enu.portal.DictionaryStaffInfoRequest;
 import bbt.tao.orchestra.dto.enu.portal.EnuStaffSearchResponse;
 import bbt.tao.orchestra.service.client.EnuPortalApiClient;
 import bbt.tao.orchestra.tools.formatter.fabric.ResponseFormatterRegistry;
+import bbt.tao.orchestra.tools.meta.AgentToolMeta;
 import io.micrometer.observation.annotation.Observed;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
@@ -25,6 +26,16 @@ public class StaffTool {
         this.responseFormatterRegistry = responseFormatterRegistry;
     }
 
+    @AgentToolMeta(
+            description = """
+                    Получает сведения о сотруднике ENU: корректные ФИО, контакты, должности, научные степени и расписание приемных часов.
+                    Поддерживает поиск по фамилии, имени и отчеству, учитывает склонения и возвращает структурированную карточку с контактными данными.
+                    """,
+            examples = {
+                    "Найди контакты преподавателя Иванов Иван Иванович",
+                    "Покажи приемные часы доцента Сарсенов Жандос"
+            }
+    )
     @Tool(name = "getStaffInfo", description = """
             Ты получаешь произвольный запрос пользователя (на русском или казахском), где может встречаться ФИО в любом падеже и порядке. Твоя цель — извлечь ФИО и привести его к канонической форме (именительный падеж), при этом:
             

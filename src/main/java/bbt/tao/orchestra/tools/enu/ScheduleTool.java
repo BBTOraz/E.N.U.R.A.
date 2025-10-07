@@ -9,6 +9,7 @@ import bbt.tao.orchestra.service.DateResolutionService;
 import bbt.tao.orchestra.service.client.PlatonusPortalApiClient;
 import bbt.tao.orchestra.tools.formatter.ToolResponseFormatter;
 import bbt.tao.orchestra.tools.formatter.fabric.ResponseFormatterRegistry;
+import bbt.tao.orchestra.tools.meta.AgentToolMeta;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -33,6 +34,16 @@ public class ScheduleTool {
         this.scheduleFormatter = formatterRegistry.getFormatter(ScheduleFormatData.class);
     }
 
+    @AgentToolMeta(
+            description = """
+                    Возвращает расписание студента ENU из Platonus по неделе и семестру: предметы, аудитории, преподавателей и формат занятий.
+                    Ожидает пользовательский запрос на русском, извлекает неделю/семестр и формирует готовый ответ по дням.
+                    """,
+            examples = {
+                    "Покажи расписание на текущую неделю",
+                    "Найди расписание занятий на третью неделю осеннего семестра"
+            }
+    )
     @Tool(name = "getPlatonusStudentSchedule", description = """
             Используй этот инструмент, когда пользователь спрашивает о расписании, занятиях, парах, лекциях, семинарах, уроках.
             """, returnDirect = true)
@@ -76,7 +87,7 @@ public class ScheduleTool {
         ScheduleFormatData formatData = new ScheduleFormatData(apiResponse, resolutionDetails);
 
         String formattedSchedule = scheduleFormatter.format(formatData);
-        log.debug("Сформированное расписание инструментом '{}' (первые 150 символов): {}", "getPlatonusStudentSchedule", formattedSchedule.substring(0, Math.min(formattedSchedule.length(), 150)).replace("\n", " "));
+        log.debug("Сформированное расписание инструментом '{}' (первые 150 символов): {}", "getPlatonusStudentSchedule", formattedSchedule.substring(0, Math.min(formattedSchedule.length(), 150)).replace(" ", " "));
         return formattedSchedule;
 
     }
