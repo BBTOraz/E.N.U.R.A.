@@ -2,6 +2,9 @@ package bbt.tao.orchestra.conf;
 
 import io.netty.channel.ChannelOption;
 import io.netty.handler.logging.LogLevel;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +21,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.transport.logging.AdvancedByteBufFormat;
+
+import javax.net.ssl.SSLException;
 
 import java.nio.charset.StandardCharsets;
 
@@ -64,7 +69,17 @@ public class DefaultClientBuilderConfig {
                 .doOnConnected(conn -> conn
                         .addHandlerLast(new ReadTimeoutHandler(120))
                         .addHandlerLast(new WriteTimeoutHandler(120))
-                );
+                )
+                .secure(spec -> {
+                    try {
+                        SslContext sslCtx = SslContextBuilder.forClient()
+                                .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                                .build();
+                        spec.sslContext(sslCtx);
+                    } catch (SSLException e) {
+                        log.warn("Could not build insecure SSL context", e);
+                    }
+                });
 
         return WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(tcp))

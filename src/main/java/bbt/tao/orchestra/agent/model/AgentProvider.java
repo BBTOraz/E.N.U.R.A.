@@ -6,7 +6,8 @@ import java.util.Optional;
 
 public enum AgentProvider {
     GROQ("groq"),
-    OLLAMA("ollama");
+    OLLAMA("ollama"),
+    OPEN_ROUTER("open-router");
 
     private final String id;
 

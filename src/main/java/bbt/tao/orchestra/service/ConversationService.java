@@ -3,18 +3,21 @@ package bbt.tao.orchestra.service;
 import bbt.tao.orchestra.entity.ConversationTitle;
 import bbt.tao.orchestra.entity.MessageEntity;
 import bbt.tao.orchestra.entity.MessageType;
+import bbt.tao.orchestra.observability.OrchestraTelemetry;
 import bbt.tao.orchestra.repository.ConversationRepository;
 import bbt.tao.orchestra.repository.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -28,13 +31,16 @@ public class ConversationService {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final ChatClient chatClient;
+    private final OrchestraTelemetry telemetry;
 
     public ConversationService(ConversationRepository conversationRepository,
                                MessageRepository messageRepository,
-                               @Qualifier("plainChatClient") ChatClient chatClient) {
+                               @Qualifier("plainChatClient") ChatClient chatClient,
+                               @Nullable OrchestraTelemetry telemetry) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.chatClient = chatClient;
+        this.telemetry = telemetry == null ? OrchestraTelemetry.noop() : telemetry;
     }
 
     public Mono<Void> saveConversationPair(String conversationId, String userMessage, String assistantMessage) {
@@ -89,25 +95,38 @@ public class ConversationService {
     }
 
     public Mono<String> generateAndSaveTitle(String conversationId, String firstMessage) {
-    return conversationRepository.existsById(conversationId)
-            .flatMap(exists -> {
-                if (exists) {
-                    return conversationRepository.findById(conversationId)
-                            .map(ConversationTitle::title);
-                } else {
-                    return Mono.fromCallable(() ->
-                                    chatClient.prompt()
-                                            .user("Придумай лаконичный заголовок для беседы: " + firstMessage)
-                                            .call()
-                                            .content()
-                            )
-                            .subscribeOn(Schedulers.boundedElastic())
-                            .flatMap(title ->
-                                    conversationRepository.insertTitle(conversationId, title)
-                                            .thenReturn(title)
-                            );
-                }
-            });
+        return conversationRepository.existsById(conversationId)
+                .flatMap(exists -> {
+                    if (exists) {
+                        return conversationRepository.findById(conversationId)
+                                .map(ConversationTitle::title);
+                    }
+                    return Mono.defer(() -> {
+                        long startNanos = System.nanoTime();
+                        return Mono.fromCallable(() ->
+                                        chatClient.prompt()
+                                                .user("Придумай лаконичный заголовок для беседы: " + firstMessage)
+                                                .call()
+                                                .content()
+                                )
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .flatMap(title ->
+                                        conversationRepository.insertTitle(conversationId, title)
+                                                .thenReturn(title)
+                                )
+                                .doOnSuccess(title -> telemetry.recordConversationTitleGeneration(
+                                        "success",
+                                        elapsedSince(startNanos)
+                                ))
+                                .doOnError(error -> {
+                                    telemetry.recordConversationTitleGeneration(
+                                            "error",
+                                            elapsedSince(startNanos)
+                                    );
+                                    telemetry.logApplicationError(error, "conversation_title_generation", conversationId);
+                                });
+                    });
+                });
     }
 
     public Flux<MessageEntity> getHistory(String conversationId) {
@@ -125,5 +144,9 @@ public class ConversationService {
                 .map(titles -> titles.stream()
                         .filter(title -> title.title() != null && !title.title().isEmpty())
                         .toList());
+    }
+
+    private Duration elapsedSince(long startNanos) {
+        return Duration.ofNanos(System.nanoTime() - startNanos);
     }
 }

@@ -4,6 +4,7 @@ import bbt.tao.orchestra.agent.AgentChatClientRegistry;
 import bbt.tao.orchestra.agent.DefaultAgentChatClientRegistry;
 import bbt.tao.orchestra.agent.model.AgentProvider;
 import bbt.tao.orchestra.agent.model.AgentRole;
+import bbt.tao.orchestra.observability.OrchestraTelemetry;
 import bbt.tao.orchestra.service.rag.HierarchicalDocumentRetriever;
 import bbt.tao.orchestra.service.rag.PreloadingDocumentRetriever;
 import io.netty.channel.ChannelOption;
@@ -12,7 +13,6 @@ import io.netty.handler.timeout.WriteTimeoutHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -33,6 +33,7 @@ import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.lang.Nullable;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
@@ -47,7 +48,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 @Configuration
-@EnableConfigurationProperties(AgentProperties.class)
+@EnableConfigurationProperties({AgentProperties.class, OpenRouterProperties.class})
 public class AgentChatClientsConfig {
 
     private static final Logger log = LoggerFactory.getLogger(AgentChatClientsConfig.class);
@@ -56,6 +57,10 @@ public class AgentChatClientsConfig {
     private static final Duration READ_TIMEOUT = Duration.ofMinutes(3);
     private static final String PROVIDER_GROQ = "groq";
     private static final String PROVIDER_OLLAMA = "ollama";
+    private static final String PROVIDER_OPEN_ROUTER = "open-router";
+    private static final String OPERATION_REST_CLIENT = "rest_client";
+    private static final String OPERATION_WEB_CLIENT = "web_client";
+    private final OrchestraTelemetry telemetry;
 
     private static final String SOLVER_SYSTEM_PROMPT = """
             Ты — русскоязычный/казахскоязычный ИИ-ассистент Евразийского национального университета. Твоя задача — помогать студентам и сотрудникам, предоставляя точную и полезную информацию.
@@ -77,25 +82,34 @@ public class AgentChatClientsConfig {
             }.
             """;
 
+    public AgentChatClientsConfig(@Nullable OrchestraTelemetry telemetry) {
+        this.telemetry = telemetry == null ? OrchestraTelemetry.noop() : telemetry;
+    }
+
     @Bean
-    public AgentChatClientRegistry agentChatClientRegistry(ChatMemory chatMemory,
-                                                           DocumentRetriever documentRetriever,
+    public AgentChatClientRegistry agentChatClientRegistry(DocumentRetriever documentRetriever,
                                                            AgentProperties properties,
+                                                           OpenRouterProperties openRouterProperties,
                                                            @Value("${spring.ai.openai.api-key}") String groqApiKey,
                                                            @Value("${spring.ai.openai.base-url}") String groqBaseUrl,
                                                            @Value("${spring.ai.openai.chat.options.model}") String groqModel,
                                                            @Value("${spring.ai.ollama.base-url:http://localhost:11434}") String ollamaBaseUrl,
                                                            @Value("${spring.ai.ollama.chat.model}") String ollamaModel) {
 
-        ChatClient groqSolver = buildGroqClient(groqApiKey, groqBaseUrl, groqModel, 0.2, SOLVER_SYSTEM_PROMPT,
-                 documentRetriever, true);
+        ChatClient groqSolver = buildOpenAiCompatibleClient(PROVIDER_GROQ, groqApiKey, groqBaseUrl, groqModel,
+                0.2, SOLVER_SYSTEM_PROMPT, documentRetriever, true);
+        ChatClient groqVerifier = buildOpenAiCompatibleClient(PROVIDER_GROQ, groqApiKey, groqBaseUrl, groqModel,
+                0.0, VERIFIER_SYSTEM_PROMPT, documentRetriever, false);
 
-        ChatClient groqVerifier = buildGroqClient(groqApiKey, groqBaseUrl, groqModel, 0.0, VERIFIER_SYSTEM_PROMPT,
-                documentRetriever, false);
+        ChatClient openRouterSolver = buildOpenAiCompatibleClient(PROVIDER_OPEN_ROUTER,
+                openRouterProperties.getApiKey(), openRouterProperties.getBaseUrl(), openRouterProperties.getModel(),
+                0.2, SOLVER_SYSTEM_PROMPT, documentRetriever, true);
+        ChatClient openRouterVerifier = buildOpenAiCompatibleClient(PROVIDER_OPEN_ROUTER,
+                openRouterProperties.getApiKey(), openRouterProperties.getBaseUrl(), openRouterProperties.getModel(),
+                0.0, VERIFIER_SYSTEM_PROMPT, documentRetriever, false);
 
         ChatClient ollamaSolver = buildOllamaClient(ollamaBaseUrl, ollamaModel, 0.1, SOLVER_SYSTEM_PROMPT,
                 documentRetriever, true);
-
         ChatClient ollamaVerifier = buildOllamaClient(ollamaBaseUrl, ollamaModel, 0.0, VERIFIER_SYSTEM_PROMPT,
                 documentRetriever, false);
 
@@ -104,30 +118,32 @@ public class AgentChatClientsConfig {
                 AgentRole.SOLVER, groqSolver,
                 AgentRole.VERIFIER, groqVerifier
         ));
+        registry.put(AgentProvider.OPEN_ROUTER, Map.of(
+                AgentRole.SOLVER, openRouterSolver,
+                AgentRole.VERIFIER, openRouterVerifier
+        ));
         registry.put(AgentProvider.OLLAMA, Map.of(
                 AgentRole.SOLVER, ollamaSolver,
                 AgentRole.VERIFIER, ollamaVerifier
         ));
 
         AgentProvider defaultProvider = AgentProvider.from(properties.getDefaultProvider())
-                .orElse(AgentProvider.GROQ);
-        if (!registry.containsKey(defaultProvider)) {
-            log.warn("Agent configuration: default provider '{}' is not available, falling back to GROQ",
-                    properties.getDefaultProvider());
-        }
+                .orElse(AgentProvider.OPEN_ROUTER);
+        log.info("Agent configuration: default provider = {}", defaultProvider);
 
         return new DefaultAgentChatClientRegistry(registry);
     }
 
-    private ChatClient buildGroqClient(String apiKey,
-                                       String baseUrl,
-                                       String model,
-                                       double temperature,
-                                       String systemPrompt,
-                                       DocumentRetriever documentRetriever,
-                                       boolean withRetriever) {
-        RestClient.Builder restClientBuilder = createRestClientBuilder(PROVIDER_GROQ, AgentChatClientsConfig::maskGroqHeaders);
-        WebClient.Builder webClientBuilder = createWebClientBuilder(PROVIDER_GROQ);
+    private ChatClient buildOpenAiCompatibleClient(String provider,
+                                                   String apiKey,
+                                                   String baseUrl,
+                                                   String model,
+                                                   double temperature,
+                                                   String systemPrompt,
+                                                   DocumentRetriever documentRetriever,
+                                                   boolean withRetriever) {
+        RestClient.Builder restClientBuilder = createRestClientBuilder(provider, AgentChatClientsConfig::maskGroqHeaders);
+        WebClient.Builder webClientBuilder = createWebClientBuilder(provider);
 
         OpenAiApi openAiApi = OpenAiApi.builder()
                 .apiKey(apiKey)
@@ -205,6 +221,7 @@ public class AgentChatClientsConfig {
         factory.setReadTimeout(READ_TIMEOUT);
 
         ClientHttpRequestInterceptor loggingInterceptor = (request, body, execution) -> {
+            long startNanos = System.nanoTime();
             HttpHeaders maskedHeaders = headerMasker.apply(request.getHeaders());
             log.debug("[{}] REST {} {} headers={} bodyLength={}",
                     provider,
@@ -212,8 +229,20 @@ public class AgentChatClientsConfig {
                     request.getURI(),
                     maskedHeaders,
                     body == null ? 0 : body.length);
-            ClientHttpResponse response = executeWithLogging(provider, execution, request, body);
-            return response;
+            try {
+                ClientHttpResponse response = executeWithLogging(provider, execution, request, body);
+                telemetry.recordProviderCall(
+                        provider,
+                        OPERATION_REST_CLIENT,
+                        statusFrom(response.getStatusCode()),
+                        elapsedSince(startNanos)
+                );
+                return response;
+            } catch (IOException | RuntimeException error) {
+                telemetry.recordProviderCall(provider, OPERATION_REST_CLIENT, "error", elapsedSince(startNanos));
+                telemetry.logApplicationError(error, "provider_call_rest_client", null);
+                throw error;
+            }
         };
 
         return RestClient.builder()
@@ -245,14 +274,24 @@ public class AgentChatClientsConfig {
     }
 
     private ExchangeFilterFunction loggingFilter(String provider) {
-        return ExchangeFilterFunction.ofRequestProcessor(request -> {
-                    log.debug("[{}] WebClient {} {}", provider, request.method(), request.url());
-                    return Mono.just(request);
-                })
-                .andThen(ExchangeFilterFunction.ofResponseProcessor(response -> {
-                    log.debug("[{}] WebClient response status={}", provider, response.statusCode());
-                    return Mono.just(response);
-                }));
+        return (request, next) -> {
+            long startNanos = System.nanoTime();
+            log.debug("[{}] WebClient {} {}", provider, request.method(), request.url());
+            return next.exchange(request)
+                    .doOnNext(response -> {
+                        log.debug("[{}] WebClient response status={}", provider, response.statusCode());
+                        telemetry.recordProviderCall(
+                                provider,
+                                OPERATION_WEB_CLIENT,
+                                response.statusCode().is2xxSuccessful() ? "success" : "error",
+                                elapsedSince(startNanos)
+                        );
+                    })
+                    .doOnError(error -> {
+                        telemetry.recordProviderCall(provider, OPERATION_WEB_CLIENT, "error", elapsedSince(startNanos));
+                        telemetry.logApplicationError(error, "provider_call_web_client", null);
+                    });
+        };
     }
 
     private static HttpHeaders maskGroqHeaders(HttpHeaders headers) {
@@ -294,5 +333,13 @@ public class AgentChatClientsConfig {
     @Primary
     public DocumentRetriever preloadingDocumentRetriever(HierarchicalDocumentRetriever hierarchicalDocumentRetriever) {
         return new PreloadingDocumentRetriever(hierarchicalDocumentRetriever);
+    }
+
+    private Duration elapsedSince(long startNanos) {
+        return Duration.ofNanos(System.nanoTime() - startNanos);
+    }
+
+    private String statusFrom(HttpStatusCode statusCode) {
+        return statusCode.is2xxSuccessful() ? "success" : "error";
     }
 }

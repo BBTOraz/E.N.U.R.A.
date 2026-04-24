@@ -9,6 +9,7 @@ import bbt.tao.orchestra.agent.model.AgentStage;
 import bbt.tao.orchestra.agent.model.AgentVisibility;
 import bbt.tao.orchestra.conf.AgentProperties;
 import bbt.tao.orchestra.dto.api.OrchestraResponse;
+import bbt.tao.orchestra.observability.OrchestraTelemetry;
 import bbt.tao.orchestra.service.ConversationService;
 import bbt.tao.orchestra.service.format.Summarizer;
 import org.slf4j.Logger;
@@ -16,11 +17,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,17 +39,20 @@ public class AgentChatController {
     private final Summarizer summarizer;
     private final AgentProperties properties;
     private final ConversationService conversationService;
+    private final OrchestraTelemetry telemetry;
     
     private final ConcurrentHashMap<String, AtomicBoolean> activeConversations = new ConcurrentHashMap<>();
 
     public AgentChatController(AgentOrchestrator orchestrator,
                                Summarizer summarizer,
                                AgentProperties properties,
-                               ConversationService conversationService) {
+                               ConversationService conversationService,
+                               @Nullable OrchestraTelemetry telemetry) {
         this.orchestrator = orchestrator;
         this.summarizer = summarizer;
         this.properties = properties;
         this.conversationService = conversationService;
+        this.telemetry = telemetry == null ? OrchestraTelemetry.noop() : telemetry;
     }
 
     @PostMapping(value = "/{conversationId}", consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -88,6 +94,7 @@ public class AgentChatController {
                 || (solverInput != null && solverOpt.isEmpty())
                 || (verifierInput != null && verifierOpt.isEmpty())) {
             lock.set(false);
+            log.warn("[{}] Request rejected: unknown provider value", conversationId);
             return Flux.just(errorEvent("Unknown provider value"));
         }
 
@@ -110,6 +117,9 @@ public class AgentChatController {
                 providerDefault,
                 thinkingEnabled
         );
+        String modeTag = mode.name().toLowerCase(Locale.ROOT);
+        telemetry.logConversationMessageSubmitted(conversationId, modeTag, message.length());
+        telemetry.recordSseSession("opened");
 
         log.info("[{}] AgentChatController START: solver={}, verifier={}, mode={}, visibility={}, thinking={}, message='{}'",
                 conversationId, context.solverProvider(), context.verifierProvider(), mode, visibility, thinkingEnabled, message);
@@ -140,6 +150,7 @@ public class AgentChatController {
                 .doOnComplete(() -> {
                     long duration = System.currentTimeMillis() - startTime;
                     log.info("[{}] Stream COMPLETED successfully in {}ms", originalConversationId, duration);
+                    telemetry.recordSseSession("completed");
                     
                     if (finalAnswer[0] != null && !finalAnswer[0].isBlank()) {
                         log.info("[{}] Saving conversation pair: userMessageLength={}, assistantMessageLength={}",
@@ -149,8 +160,11 @@ public class AgentChatController {
                                 .doOnSuccess(v -> log.info("[{}] Conversation pair saved successfully", originalConversationId))
                                 .subscribe(
                                         null,
-                                        ex -> log.error("[{}] Failed to save conversation pair: {}", 
-                                                originalConversationId, ex.getMessage(), ex)
+                                        ex -> {
+                                            telemetry.logApplicationError(ex, "conversation_pair_save", originalConversationId);
+                                            log.error("[{}] Failed to save conversation pair: {}",
+                                                    originalConversationId, ex.getMessage(), ex);
+                                        }
                                 );
                     } else {
                         log.warn("[{}] Skipping save: no final answer received", originalConversationId);
@@ -160,16 +174,24 @@ public class AgentChatController {
                     long duration = System.currentTimeMillis() - startTime;
                     log.error("[{}] Stream ERROR after {}ms: {}",
                             originalConversationId, duration, error.getMessage(), error);
+                    telemetry.recordSseSession("failed");
+                    telemetry.logApplicationError(error, "agent_chat_stream", originalConversationId);
                 })
                 .doOnCancel(() -> {
                     cancelled.set(true);
                     long duration = System.currentTimeMillis() - startTime;
                     log.warn("[{}] Stream CANCELLED by client after {}ms. Not saving partial response.",
                             originalConversationId, duration);
+                    telemetry.recordSseSession("failed");
                 })
                 .doFinally(signalType -> {
                     lock.set(false);
                     long duration = System.currentTimeMillis() - startTime;
+                    telemetry.logSseStreamClosed(
+                            originalConversationId,
+                            sseStatus(signalType.name(), cancelled.get()),
+                            Duration.ofMillis(duration)
+                    );
                     log.info("[{}] Stream FINALIZED: signal={}, duration={}ms, cancelled={}",
                             originalConversationId, signalType, duration, cancelled.get());
                 });
@@ -289,5 +311,15 @@ public class AgentChatController {
             return false;
         }
         return value.equalsIgnoreCase("true") || value.equalsIgnoreCase("on") || value.equalsIgnoreCase("1");
+    }
+
+    private String sseStatus(String signalType, boolean cancelled) {
+        if (cancelled || "cancel".equalsIgnoreCase(signalType)) {
+            return "cancelled";
+        }
+        if ("on_error".equalsIgnoreCase(signalType)) {
+            return "failed";
+        }
+        return "completed";
     }
 }
