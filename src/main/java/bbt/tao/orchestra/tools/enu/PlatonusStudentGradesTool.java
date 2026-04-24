@@ -6,9 +6,11 @@ import bbt.tao.orchestra.exception.UnauthorizedException;
 import bbt.tao.orchestra.service.client.PlatonusPortalApiClient;
 import bbt.tao.orchestra.tools.formatter.ToolResponseFormatter;
 import bbt.tao.orchestra.tools.formatter.fabric.ResponseFormatterRegistry;
+import bbt.tao.orchestra.tools.meta.AgentToolMeta;
 import bbt.tao.orchestra.util.AcademicTime;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -27,12 +29,23 @@ public class PlatonusStudentGradesTool {
 
     public PlatonusStudentGradesTool(AcademicTime academicTime,
                                      PlatonusPortalApiClient platonusPortalApiClient,
-                                     ResponseFormatterRegistry responseFormatterRegistry) {
+                                     ResponseFormatterRegistry responseFormatterRegistry
+                                     ) {
         this.academicTime = academicTime;
         this.platonusPortalApiClient = platonusPortalApiClient;
         this.platonusGradesResponseFormatter = responseFormatterRegistry.getFormatter(FormattedGradesResponse.class);
     }
 
+    @AgentToolMeta(
+            description = """
+                    Получает из Platonus оценки студента за активный семестр: предметы, промежуточные баллы, итоговые результаты и предупреждения.
+                    Подходит для вопросов о текущем прогрессе и стипендии, не требует дополнительных параметров от пользователя.
+                    """,
+            examples = {
+                    "Покажи мои оценки за текущий семестр",
+                    "Какие у меня баллы по предметам сейчас?"
+            }
+    )
     @Tool(name = "getGrades", description = """
             узнать оценки, получить текущие оценки за семестр.
             """,
@@ -75,7 +88,7 @@ public class PlatonusStudentGradesTool {
                     FormattedGradesResponse dataToFormat = new FormattedGradesResponse(semesterPerformance, recommendations, scholarshipInfo);
                     String formattedOutput = platonusGradesResponseFormatter.format(dataToFormat);
                     log.info("StudentGradesTool: Оценки успешно отформатированы.");
-                    System.out.println("StudentGradesTool: Форматированный вывод оценок:\n" + formattedOutput);
+                    System.out.println("StudentGradesTool: Форматированный вывод оценок: " + formattedOutput);
                     return formattedOutput;
                 })
                 .onErrorResume(e -> {

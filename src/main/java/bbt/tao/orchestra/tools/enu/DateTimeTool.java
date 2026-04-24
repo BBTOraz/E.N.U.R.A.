@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 @Component
 public class DateTimeTool {
 
-
     @Tool(name = "getCurrentDateTime", description = "Возвращает текущую дату и время в формате ISO 8601.")
     public String getCurrentDateTime() {
         return java.time.LocalDateTime.now().toString();

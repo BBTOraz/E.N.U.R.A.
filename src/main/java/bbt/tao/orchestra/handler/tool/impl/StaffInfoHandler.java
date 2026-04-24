@@ -32,6 +32,6 @@ public class StaffInfoHandler implements InlineFunctionHandler {
         DictionaryStaffInfoRequest dto =
                 mapper.treeToValue(req, DictionaryStaffInfoRequest.class);
 
-        return staffTool.getStaffInfo(dto);
+        return staffTool.getStaffInfo(dto.firstname(), dto.lastname(), dto.middlename());
     }
 }

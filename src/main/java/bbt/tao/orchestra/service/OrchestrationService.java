@@ -39,14 +39,14 @@ public class OrchestrationService {
     public Mono<Void> orchestrate(String sessionId, String sttText) {
         log.info("Orchestration started for STT input: '{}'", sttText);
 
-        return llmService.generateStreaming(sessionId, sttText) // Получаем Flux<String> чанков LLM
-                .publishOn(Schedulers.boundedElastic()) // Переключаем обработку на другой поток, чтобы не блокировать WS/Netty
+        return llmService.generateStreaming(sessionId, sttText)
+                .publishOn(Schedulers.boundedElastic())
                 .doOnNext(llmChunk -> log.debug("Processing LLM chunk: '{}...'", llmChunk))
                 .bufferTimeout(100, Duration.ofMillis(CHUNK_BUFFER_TIMEOUT_MS))
-                .filter(list-> !list.isEmpty()) // Пропускаем пустые списки
-                .map(list -> String.join("", list)) // Объединяем чанки в одно предложение
+                .filter(list-> !list.isEmpty())
+                .map(list -> String.join("", list))
                 .flatMap(this::splitAndProcessText)
-                .then() // Возвращаем Mono<Void>, когда весь Flux обработан
+                .then()
                 .doOnTerminate(() -> log.info("Orchestration finished for STT input: '{}'", sttText))
                 .doOnError(e -> log.error("Orchestration failed for STT input: {}", sttText, e));
     }
@@ -69,8 +69,6 @@ public class OrchestrationService {
         }
 
         log.debug("Split into {} non-empty segments for TTS.", nonEmptySegments.size());
-
-        // Обрабатываем каждый сегмент ПОСЛЕДОВАТЕЛЬНО с помощью concatMap
         return Flux.fromIterable(nonEmptySegments)
                 .concatMap(segment -> {
                     log.info(">>> Sending to TTS: '{}'", segment); // Логируем ЧТО отправляем в TTS

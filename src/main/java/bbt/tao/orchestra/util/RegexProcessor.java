@@ -44,6 +44,42 @@ public class RegexProcessor {
     public RegexParseOutput process(String text, LocalDate baseDate) {
         String normalizedText = text.trim().toLowerCase(Locale.ROOT);
 
+        // Эвристика: распознать относительные дни внутри фразы и при склеенных словах
+        String squeezed = normalizedText.replaceAll("\\s+", "");
+        if (containsWord(normalizedText, "сегодня") || squeezed.contains("сегодня")) {
+            LocalDate date = baseDate.plusDays(0);
+            log.debug("Regex: распознана относительная дата 'сегодня' -> {}", date);
+            return new RegexParseOutput(Optional.of(date), Optional.empty(), "сегодня");
+        }
+        if (containsWord(normalizedText, "завтра") || squeezed.contains("завтра")) {
+            LocalDate date = baseDate.plusDays(1);
+            log.debug("Regex: распознана относительная дата 'завтра' -> {}", date);
+            return new RegexParseOutput(Optional.of(date), Optional.empty(), "завтра");
+        }
+        if (containsWord(normalizedText, "послезавтра") || squeezed.contains("послезавтра")) {
+            LocalDate date = baseDate.plusDays(2);
+            log.debug("Regex: распознана относительная дата 'послезавтра' -> {}", date);
+            return new RegexParseOutput(Optional.of(date), Optional.empty(), "послезавтра");
+        }
+        if (containsWord(normalizedText, "вчера") || squeezed.contains("вчера")) {
+            LocalDate date = baseDate.plusDays(-1);
+            log.debug("Regex: распознана относительная дата 'вчера' -> {}", date);
+            return new RegexParseOutput(Optional.of(date), Optional.empty(), "вчера");
+        }
+        // English fallbacks
+        if (containsWord(normalizedText, "today") || squeezed.contains("today")) {
+            return new RegexParseOutput(Optional.of(baseDate), Optional.empty(), "today");
+        }
+        if (containsWord(normalizedText, "tomorrow") || squeezed.contains("tomorrow")) {
+            return new RegexParseOutput(Optional.of(baseDate.plusDays(1)), Optional.empty(), "tomorrow");
+        }
+        if (containsWord(normalizedText, "day after tomorrow") || squeezed.contains("dayaftertomorrow")) {
+            return new RegexParseOutput(Optional.of(baseDate.plusDays(2)), Optional.empty(), "day after tomorrow");
+        }
+        if (containsWord(normalizedText, "yesterday") || squeezed.contains("yesterday")) {
+            return new RegexParseOutput(Optional.of(baseDate.minusDays(1)), Optional.empty(), "yesterday");
+        }
+
         Matcher weekMatcher = WEEK_NUMBER_PATTERN.matcher(text);
         if (weekMatcher.find()) {
             try {
@@ -64,5 +100,12 @@ public class RegexProcessor {
         }
 
         return new RegexParseOutput(Optional.empty(), Optional.empty(), "");
+    }
+
+    private boolean containsWord(String text, String word) {
+        String escaped = Pattern.quote(word);
+        Pattern p = Pattern.compile("(?<![\\p{L}\\p{N}_])" + escaped + "(?![\\p{L}\\p{N}_])",
+                Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+        return p.matcher(text).find();
     }
 }

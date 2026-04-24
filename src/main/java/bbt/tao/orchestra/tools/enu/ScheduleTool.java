@@ -9,14 +9,12 @@ import bbt.tao.orchestra.service.DateResolutionService;
 import bbt.tao.orchestra.service.client.PlatonusPortalApiClient;
 import bbt.tao.orchestra.tools.formatter.ToolResponseFormatter;
 import bbt.tao.orchestra.tools.formatter.fabric.ResponseFormatterRegistry;
+import bbt.tao.orchestra.tools.meta.AgentToolMeta;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
-import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 
 @Component
@@ -36,12 +34,17 @@ public class ScheduleTool {
         this.scheduleFormatter = formatterRegistry.getFormatter(ScheduleFormatData.class);
     }
 
+    @AgentToolMeta(
+            description = """
+                    Возвращает расписание студента ENU из Platonus по неделе и семестру: предметы, аудитории, преподавателей и формат занятий.
+                    Ожидает пользовательский запрос на русском, извлекает неделю/семестр и формирует готовый ответ по дням.
+                    """,
+            examples = {
+                    "Покажи расписание на текущую неделю",
+                    "Найди расписание занятий на третью неделю осеннего семестра"
+            }
+    )
     @Tool(name = "getPlatonusStudentSchedule", description = """
-            Получает расписание занятий для студентов из системы Платонус.
-            Принимает ОРИГИНАЛЬНЫЙ ЗАПРОС ПОЛЬЗОВАТЕЛЯ в параметре 'userInput'.
-            Инструмент сам попытается извлечь дату или определить намерение пользователя (например, показать текущую неделю или конкретный день, или указанную неделю).
-            НЕ ОЖИДАЕТ от LLM предварительно извлеченных дат, номеров недель или семестров.
-            Возвращает отформатированное расписание или сообщение об ошибке/отсутствии занятий.
             Используй этот инструмент, когда пользователь спрашивает о расписании, занятиях, парах, лекциях, семинарах, уроках.
             """, returnDirect = true)
     public String getSchedule(@ToolParam(description = "оригинальный текст пользователя!") String userInput) throws ExecutionException, InterruptedException {
@@ -84,7 +87,7 @@ public class ScheduleTool {
         ScheduleFormatData formatData = new ScheduleFormatData(apiResponse, resolutionDetails);
 
         String formattedSchedule = scheduleFormatter.format(formatData);
-        log.debug("Сформированное расписание инструментом '{}' (первые 150 символов): {}", "getPlatonusStudentSchedule", formattedSchedule.substring(0, Math.min(formattedSchedule.length(), 150)).replace("\n", " "));
+        log.debug("Сформированное расписание инструментом '{}' (первые 150 символов): {}", "getPlatonusStudentSchedule", formattedSchedule.substring(0, Math.min(formattedSchedule.length(), 150)).replace(" ", " "));
         return formattedSchedule;
 
     }

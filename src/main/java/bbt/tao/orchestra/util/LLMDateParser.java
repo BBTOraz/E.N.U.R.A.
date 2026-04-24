@@ -59,6 +59,7 @@ public class LLMDateParser {
         String nextMonthNumStr = String.format("%02d", nextMonthDate.getMonthValue());
         String yearOfNextMonthStr = String.valueOf(nextMonthDate.getYear());
 
+
         String systemMessageContent = """
             Твоя задача - извлечь из запроса пользователя КОНКРЕТНУЮ ДАТУ и вернуть её в формате ДД.ММ.ГГГГ.
             Старайся ВСЕГДА вернуть дату, если это логически возможно.

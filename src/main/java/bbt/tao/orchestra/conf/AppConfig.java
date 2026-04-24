@@ -11,11 +11,6 @@ import java.time.ZoneId;
 public class AppConfig {
     @Bean
     public Clock systemClock() {
-        return Clock.fixed(
-                LocalDate.of(2024, 9, 9)
-                        .atStartOfDay(ZoneId.of("Asia/Almaty"))
-                        .toInstant(),
-                ZoneId.of("Asia/Almaty")
-        );
+        return Clock.system(ZoneId.systemDefault());
     }
 }

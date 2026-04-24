@@ -20,30 +20,16 @@ import java.util.stream.Collectors;
 @Slf4j
 public class PlatonusScheduleResponseFormatter implements ToolResponseFormatter<ScheduleFormatData> {
 
+    private static final String NEW_LINE = "\n";
+    private static final String DIVIDER = "---";
     private final Locale RUSSIAN_LOCALE = new Locale("ru");
-
-    private String getLocalizedDayName(DayOfWeek dayOfWeek, Locale locale) {
-        if (dayOfWeek == null) return "Неизвестный день";
-        return dayOfWeek.getDisplayName(TextStyle.FULL_STANDALONE, locale);
-    }
-
-    private String getLocalizedDayNameFromApiKey(String dayKeyStr, Locale locale) {
-        try {
-            int dayKey = Integer.parseInt(dayKeyStr);
-            if (dayKey >= 1 && dayKey <= 7) {
-                return DayOfWeek.of(dayKey).getDisplayName(TextStyle.FULL_STANDALONE, locale);
-            }
-        } catch (NumberFormatException e) {
-            log.warn("Неверный ключ дня из API для локализации: {}", dayKeyStr);
-        }
-        return "День " + dayKeyStr;
-    }
 
     @Override
     public String format(ScheduleFormatData formatData) {
         PlatonusApiResponse apiResponse = formatData.apiResponse();
         DateResolutionDetails resolutionDetails = formatData.resolutionResult();
-
+        log.info("Форматирование расписания: получены данные для периода '{}', тип запроса: {}, дата запроса: {}, день недели для фильтрации: {}, параметры API: {}",
+                resolutionDetails.userFriendlySummary(), resolutionDetails.queryType(), resolutionDetails.userRequestedDate(), resolutionDetails.dayOfWeekToFilter(), resolutionDetails.apiRequestParams());
         if (resolutionDetails.queryType() == ResolvedQueryType.ERROR_INVALID_WEEK_NUMBER ||
             resolutionDetails.queryType() == ResolvedQueryType.ERROR_DATE_OUT_OF_SEMESTER ||
             resolutionDetails.queryType() == ResolvedQueryType.ERROR_GENERIC ||
@@ -55,33 +41,35 @@ public class PlatonusScheduleResponseFormatter implements ToolResponseFormatter<
 
         if (apiResponse == null || apiResponse.timetable() == null || apiResponse.lessonHours() == null) {
             log.warn("Форматирование расписания: получен неполный или нулевой ответ от API Platonus.");
-            return "К сожалению, не удалось получить полные данные о расписании от сервера.";
+            return "❌ К сожалению, не удалось получить полные данные о расписании от сервера.";
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("🗓️ Расписание для: **").append(resolutionDetails.userFriendlySummary()).append("**\n");
+
+        // Главный заголовок
+        sb.append("# 📅 **РАСПИСАНИЕ ЗАНЯТИЙ**").append(NEW_LINE).append(NEW_LINE);
+        sb.append("> **Период:** ").append(resolutionDetails.userFriendlySummary()).append(NEW_LINE).append(NEW_LINE);
 
         Map<Integer, LessonHour> lessonHoursMap = apiResponse.lessonHours().stream()
-                .collect(Collectors.toMap(LessonHour::number, lh -> lh, (lh1, lh2) -> lh1)); // В случае дубликатов берем первый
-
+                .collect(Collectors.toMap(LessonHour::number, lh -> lh, (lh1, lh2) -> lh1));
 
         Optional<DayOfWeek> specificDayToDisplay = resolutionDetails.dayOfWeekToFilter();
 
         if (specificDayToDisplay.isPresent()) {
-
             DayOfWeek day = specificDayToDisplay.get();
             String dayApiKey = String.valueOf(day.getValue());
             String localizedDayName = getLocalizedDayName(day, RUSSIAN_LOCALE);
 
             boolean hasLessons = formatSingleDayContent(sb, apiResponse.timetable().days().get(dayApiKey), lessonHoursMap, localizedDayName);
             if (!hasLessons) {
-                sb.append("\n   На ").append(localizedDayName.toLowerCase(RUSSIAN_LOCALE)).append(" занятий не найдено.\n");
+                sb.append("## ℹ️ **Информация**").append(NEW_LINE).append(NEW_LINE);
+                sb.append("На **").append(localizedDayName.toLowerCase(RUSSIAN_LOCALE)).append("** занятий не найдено.").append(NEW_LINE);
             }
         } else {
-
             Map<String, DayEntry> daysFromApi = apiResponse.timetable().days();
             if (daysFromApi == null || daysFromApi.isEmpty()) {
-                sb.append("\nНа этой неделе занятий нет.\n");
+                sb.append("## ℹ️ **Информация**").append(NEW_LINE).append(NEW_LINE);
+                sb.append("На этой неделе занятий нет.").append(NEW_LINE);
             } else {
                 boolean weekHasAnyLessons = false;
                 List<Map.Entry<String, DayEntry>> sortedDays = daysFromApi.entrySet().stream()
@@ -96,14 +84,15 @@ public class PlatonusScheduleResponseFormatter implements ToolResponseFormatter<
                     }
                 }
                 if (!weekHasAnyLessons) {
-                    sb.append("\nНа этой неделе занятий нет.\n");
+                    sb.append("## ℹ️ **Информация**").append(NEW_LINE).append(NEW_LINE);
+                    sb.append("На этой неделе занятий нет.").append(NEW_LINE);
                 }
             }
         }
 
         String result = sb.toString().trim();
         while (result.endsWith("\n\n")) {
-            result = result.substring(0, result.length() -1);
+            result = result.substring(0, result.length() - 1);
         }
         return result;
     }
@@ -113,56 +102,149 @@ public class PlatonusScheduleResponseFormatter implements ToolResponseFormatter<
                                            Map<Integer, LessonHour> lessonHoursMap,
                                            String localizedDayName) {
         if (dayDataFromApi == null || dayDataFromApi.lessons() == null || dayDataFromApi.lessons().isEmpty()) {
-            return false; // Занятий нет или нет данных по дню
+            return false;
         }
 
-        // Собираем все LessonDetail за день и сортируем их по номеру пары (который является LessonHour.number)
         List<LessonDetail> lessonsForDay = dayDataFromApi.lessons().entrySet().stream()
                 .filter(entry -> entry.getValue() != null && entry.getValue().lessons() != null && !entry.getValue().lessons().isEmpty())
                 .flatMap(entry -> entry.getValue().lessons().stream())
-                // Убедимся, что у LessonDetail есть номер, соответствующий ключу в lessonHoursMap
                 .filter(ld -> lessonHoursMap.containsKey(ld.number()))
                 .sorted(Comparator.comparingInt(LessonDetail::number))
                 .toList();
 
         if (lessonsForDay.isEmpty()) {
-            return false; // Нет валидных занятий для отображения
+            return false;
         }
 
-        sb.append("\n🎓 **").append(localizedDayName.toUpperCase(RUSSIAN_LOCALE)).append("**\n");
+        // Заголовок дня
+        sb.append("## **").append(localizedDayName.toUpperCase(RUSSIAN_LOCALE)).append("**").append(NEW_LINE).append(NEW_LINE);
+
+        // Табличная сводка дня
+        appendDaySummaryTable(sb, lessonsForDay, lessonHoursMap);
+
+        // Детальная информация по каждой паре
+        appendDetailedLessons(sb, lessonsForDay, lessonHoursMap);
+
+        sb.append(DIVIDER).append(NEW_LINE).append(NEW_LINE);
+        return true;
+    }
+
+    private void appendDaySummaryTable(StringBuilder sb, List<LessonDetail> lessonsForDay, Map<Integer, LessonHour> lessonHoursMap) {
+        sb.append("### **Краткая сводка**").append(NEW_LINE).append(NEW_LINE);
+
+        sb.append("| Время | Пара | Дисциплина | Тип | Аудитория |").append(NEW_LINE);
+        sb.append("|:---:|:---:|:---|:---:|:---:|").append(NEW_LINE);
 
         for (LessonDetail lesson : lessonsForDay) {
-            LessonHour lessonTime = lessonHoursMap.get(lesson.number()); // lesson.number должен быть ключом из lessonHours
-            if (lessonTime == null) { // Дополнительная проверка, хотя выше отфильтровали
+            LessonHour lessonTime = lessonHoursMap.get(lesson.number());
+            if (lessonTime == null) continue;
+
+            String timeRange = lessonTime.start().substring(0, 5) + "-" + lessonTime.finish().substring(0, 5);
+            String lessonType = lesson.groupTypeShortName() != null && !lesson.groupTypeShortName().isBlank()
+                    ? lesson.groupTypeShortName() : "-";
+            String location = formatLocation(lesson);
+
+            sb.append("| ").append(timeRange).append(" | ")
+              .append(lessonTime.displayNumber()).append(" | ")
+              .append("**").append(escapeMarkdownTableContent(lesson.subjectName())).append("** | ")
+              .append(lessonType).append(" | ")
+              .append(location).append(" |").append(NEW_LINE);
+        }
+        sb.append(NEW_LINE);
+    }
+
+    private void appendDetailedLessons(StringBuilder sb, List<LessonDetail> lessonsForDay, Map<Integer, LessonHour> lessonHoursMap) {
+        sb.append("### **Подробная информация**").append(NEW_LINE).append(NEW_LINE);
+
+        int lessonIndex = 1;
+        for (LessonDetail lesson : lessonsForDay) {
+            LessonHour lessonTime = lessonHoursMap.get(lesson.number());
+            if (lessonTime == null) {
                 log.warn("Не найдено время для пары номер {} (предмет: {})", lesson.number(), lesson.subjectName());
                 continue;
             }
 
-            sb.append(String.format("  %s-%s (%s пара)\n",
-                    lessonTime.start().substring(0, 5), // "08:00"
-                    lessonTime.finish().substring(0, 5),// "08:50"
-                    lessonTime.displayNumber()          // 1, 2, 3...
-            ));
-            sb.append("    📚 **").append(lesson.subjectName()).append("**");
-            if (lesson.groupTypeShortName() != null && !lesson.groupTypeShortName().isBlank()) {
-                sb.append(" (").append(lesson.groupTypeShortName()).append(")");
-            }
-            sb.append("\n");
-
-            if (lesson.tutorName() != null && !lesson.tutorName().trim().isEmpty()) {
-                sb.append("    🧑‍🏫 Преподаватель: ").append(lesson.tutorName().trim()).append("\n");
-            }
-            if (lesson.auditory() != null && !lesson.auditory().isBlank()) {
-                sb.append("    🚪 Аудитория: ").append(lesson.auditory());
-                if (lesson.building() != null && !lesson.building().isBlank()) {
-                    sb.append(" (").append(lesson.building()).append(")");
-                }
-                sb.append("\n");
-            } else if (lesson.onlineClass()) {
-                sb.append("    💻 Формат: Онлайн\n");
-            }
-            sb.append("\n"); // Пустая строка между парами для читаемости
+            appendLessonCard(sb, lesson, lessonTime, lessonIndex++);
         }
-        return true; // Были занятия
+    }
+
+    private void appendLessonCard(StringBuilder sb, LessonDetail lesson, LessonHour lessonTime, int index) {
+        String timeRange = lessonTime.start().substring(0, 5) + " - " + lessonTime.finish().substring(0, 5);
+
+        sb.append("#### ").append(index).append(". **").append(escapeMarkdown(lesson.subjectName())).append("**").append(NEW_LINE);
+        sb.append("> **Время:** ").append(timeRange).append(" (").append(lessonTime.displayNumber()).append(" пара)").append(NEW_LINE);
+
+        if (lesson.groupTypeShortName() != null && !lesson.groupTypeShortName().isBlank()) {
+            sb.append("> **Тип занятия:** ").append(lesson.groupTypeShortName()).append(NEW_LINE);
+        }
+
+        if (lesson.tutorName() != null && !lesson.tutorName().trim().isEmpty()) {
+            sb.append("> **Преподаватель:** ").append(escapeMarkdown(lesson.tutorName().trim())).append(NEW_LINE);
+        }
+
+        String location = formatLocationDetailed(lesson);
+        if (!location.equals("-")) {
+            sb.append("> **Место проведения:** ").append(location).append(NEW_LINE);
+        }
+
+        sb.append(NEW_LINE);
+    }
+
+    private String formatLocation(LessonDetail lesson) {
+        if (lesson.onlineClass()) {
+            return "Онлайн";
+        }
+
+        if (lesson.auditory() != null && !lesson.auditory().isBlank()) {
+            String location = lesson.auditory();
+            if (lesson.building() != null && !lesson.building().isBlank()) {
+                location += " (" + lesson.building() + ")";
+            }
+            return escapeMarkdownTableContent(location);
+        }
+
+        return "-";
+    }
+
+    private String formatLocationDetailed(LessonDetail lesson) {
+        if (lesson.onlineClass()) {
+            return "💻 **Онлайн занятие**";
+        }
+
+        if (lesson.auditory() != null && !lesson.auditory().isBlank()) {
+            StringBuilder location = new StringBuilder();
+            location.append("🚪 Аудитория ").append(escapeMarkdown(lesson.auditory()));
+            if (lesson.building() != null && !lesson.building().isBlank()) {
+                location.append(" (").append(escapeMarkdown(lesson.building())).append(")");
+            }
+            return location.toString();
+        }
+
+        return "-";
+    }
+
+    private String getLocalizedDayName(DayOfWeek dayOfWeek, Locale locale) {
+        return dayOfWeek.getDisplayName(TextStyle.FULL, locale);
+    }
+
+    private String getLocalizedDayNameFromApiKey(String dayApiKey, Locale locale) {
+        try {
+            int dayValue = Integer.parseInt(dayApiKey);
+            DayOfWeek dayOfWeek = DayOfWeek.of(dayValue);
+            return getLocalizedDayName(dayOfWeek, locale);
+        } catch (Exception e) {
+            log.warn("Не удалось преобразовать ключ дня '{}' в DayOfWeek", dayApiKey);
+            return "День " + dayApiKey;
+        }
+    }
+
+    private String escapeMarkdownTableContent(String text) {
+        if (text == null) return "";
+        return text.replace("\n", " ").replace("\r", "").replace("|", "\\|");
+    }
+
+    private String escapeMarkdown(String text) {
+        if (text == null) return "";
+        return text.replace("*", "\\*").replace("_", "\\_").replace("`", "\\`").replace("#", "\\#");
     }
 }
