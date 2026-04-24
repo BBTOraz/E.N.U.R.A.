@@ -10,11 +10,11 @@ import io.netty.handler.timeout.WriteTimeoutHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-import org.springframework.util.StreamUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -24,11 +24,22 @@ import reactor.netty.transport.logging.AdvancedByteBufFormat;
 
 import javax.net.ssl.SSLException;
 
-import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Configuration
 @Slf4j
 public class DefaultClientBuilderConfig {
+    private static final String REDACTED = "<redacted>";
+    private static final Set<String> SENSITIVE_HEADERS = Set.of(
+            "authorization",
+            "proxy-authorization",
+            "cookie",
+            "set-cookie",
+            "x-api-key",
+            "api-key"
+    );
 
     @Bean
     public RestClient.Builder restClientBuilder() {
@@ -41,20 +52,13 @@ public class DefaultClientBuilderConfig {
         return RestClient.builder()
                 .requestFactory(bufferingFactory)
                 .requestInterceptor((request, body, execution) -> {
-
-                    log.info("→ {} {}\nHeaders: {}\nBody: {}",
-                            request.getMethod(), request.getURI(),
-                            request.getHeaders(),
-                            new String(body, StandardCharsets.UTF_8));
+                    log.info("→ {} {} headers={}",
+                            request.getMethod(), request.getURI(), redactHeaders(request.getHeaders()));
 
                     ClientHttpResponse response = execution.execute(request, body);
 
-                    String responseBody = StreamUtils.copyToString(
-                            response.getBody(), StandardCharsets.UTF_8);
-                    log.info("← {} {}\nHeaders: {}\nBody: {}",
-                            response.getStatusCode(), response.getStatusText(),
-                            response.getHeaders(),
-                            responseBody);
+                    log.info("← {} {} headers={}",
+                            response.getStatusCode(), response.getStatusText(), redactHeaders(response.getHeaders()));
 
                     return response;
                 });
@@ -65,7 +69,7 @@ public class DefaultClientBuilderConfig {
         HttpClient tcp = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
                 .wiretap("reactor.netty.http.client.HttpClient",
-                        LogLevel.DEBUG, AdvancedByteBufFormat.TEXTUAL)
+                        LogLevel.DEBUG, AdvancedByteBufFormat.SIMPLE)
                 .doOnConnected(conn -> conn
                         .addHandlerLast(new ReadTimeoutHandler(120))
                         .addHandlerLast(new WriteTimeoutHandler(120))
@@ -89,19 +93,29 @@ public class DefaultClientBuilderConfig {
 
     private ExchangeFilterFunction logRequest() {
         return ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
-           /* log.info("Request: {} {}", clientRequest.method(), clientRequest.url());*/
-            clientRequest.headers().forEach((name, values) ->
-                    values.forEach(value -> log.info("{}={}", name, value)));
+            log.info("Request: {} {} headers={}",
+                    clientRequest.method(), clientRequest.url(), redactHeaders(clientRequest.headers()));
             return Mono.just(clientRequest);
         });
     }
 
     private ExchangeFilterFunction logResponse() {
         return ExchangeFilterFunction.ofResponseProcessor(clientResponse -> {
-           /* log.info("Response status: {}", clientResponse.statusCode());*/
-            clientResponse.headers().asHttpHeaders().forEach((name, values) ->
-                    values.forEach(value -> log.info("{}={}", name, value)));
+            log.info("Response status: {} headers={}",
+                    clientResponse.statusCode(), redactHeaders(clientResponse.headers().asHttpHeaders()));
             return Mono.just(clientResponse);
         });
+    }
+
+    private Map<String, List<String>> redactHeaders(HttpHeaders headers) {
+        HttpHeaders sanitized = new HttpHeaders();
+        headers.forEach((name, values) -> {
+            if (SENSITIVE_HEADERS.contains(name.toLowerCase())) {
+                sanitized.put(name, List.of(REDACTED));
+            } else {
+                sanitized.put(name, values);
+            }
+        });
+        return sanitized;
     }
 }
